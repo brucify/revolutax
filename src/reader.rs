@@ -123,3 +123,12 @@ pub async fn print_transactions(txns: &Vec<Transaction>) -> io::Result<()>{
     err.map_or(Ok(()), Err)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod test {
+
+    #[test]
+    fn test_read_with() -> Result<(), anyhow::Error> {
+        Ok(())
+    }
+}

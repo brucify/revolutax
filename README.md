@@ -15,8 +15,9 @@ ARGS:
     <PATH>    Path to the csv file that contains transactions.
 
 OPTIONS:
-    -c, --currency <CURRENCY>    Print to stdout a new csv file with transactions with type
-                                 'Exchange' in the target currency. 'ALL' for all currencies.
+    -c, --currency <CURRENCY>    Give 'ALL' for all currencies.
+    -e, --exchanges              Print to stdout a new csv file with transactions with type
+                                 'Exchange'
     -h, --help                   Print help information
 ```
 

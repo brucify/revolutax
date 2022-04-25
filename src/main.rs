@@ -8,16 +8,20 @@ struct Cli {
     #[clap(parse(from_os_str), help = "Path to the csv file that contains transactions.")]
     path: std::path::PathBuf,
 
-    #[clap(short, long, help = "Print to stdout a new csv file with transactions with type 'Exchange' in the target currency. 'ALL' for all currencies.")]
+    #[clap(short, long, help = "Give 'ALL' for all currencies.")]
     currency: Option<String>,
+
+    #[clap(short, long, help = "Print to stdout a new csv file with transactions with type 'Exchange'")]
+    exchanges: bool,
 
 }
 
 fn main() {
     env_logger::init();
     let args = Cli::parse();
+    let currency = args.currency.unwrap_or("ALL".to_string());
 
-    if let Some(currency) = args.currency {
+    if args.exchanges {
         match currency.as_str() {
             "ALL" => cryptotax::print_exchanges(&args.path)
                 .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
