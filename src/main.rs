@@ -19,16 +19,20 @@ struct Cli {
 fn main() {
     env_logger::init();
     let args = Cli::parse();
-    let currency = args.currency.unwrap_or("ALL".to_string());
+    let currency: String = args.currency.unwrap_or("ALL".to_string());
 
     if args.exchanges {
         match currency.as_str() {
             "ALL" => cryptotax::print_exchanges(&args.path)
                 .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
                 .unwrap(),
-            _ => cryptotax::print_exchanges_in_currency(&args.path, currency)
+            _ => cryptotax::print_exchanges_in_currency(&args.path, &currency)
                 .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
                 .unwrap(),
         }
+    } else {
+        cryptotax::calculate_tax(&args.path, &currency)
+            .with_context(|| format!("Could not calculate tax from file `{:?}`", &args.path))
+            .unwrap();
     }
 }
