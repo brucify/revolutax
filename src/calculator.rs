@@ -55,13 +55,15 @@ impl CostBook {
                 }
             });
         } else {
-            self.costs.push(Cost{
+            let coupon = Cost{
                 paid_amount: t.paid_amount,
                 exchanged: Coupon::new(t.exchanged_currency.clone(), t.exchanged_amount, t.date.clone())
-            });
+            };
+            self.costs.push(coupon);
         }
     }
 
+    // TODO
     fn add_sell(&mut self, t: &Transaction, base: &Currency) {
         if t.exchanged_currency.eq(base) {
             self.find_cash_mut().map(|cost| {
@@ -124,15 +126,16 @@ impl Coupon {
 }
 
 pub(crate) async fn tax(txns: &Vec<Transaction>, currency: &Currency, base: &Currency) -> io::Result<Vec<TaxableTransaction>> {
-    let book = CostBook::new(currency.clone(), base.clone());
-    let (txns, book) =
-        txns.iter().fold((vec![], book), |(acc, mut b), t| {
+    let (txns, b) =
+        txns.iter().fold((vec![], CostBook::new(currency.clone(), base.clone())),
+                         |(acc, mut book), t| {
             match t.r#type {
-                TransactionType::Buy => b.add_buy(t, base),
-                TransactionType::Sell => b.add_sell(t, base),
+                TransactionType::Buy => book.add_buy(t, base),
+                TransactionType::Sell => book.add_sell(t, base),
             }
-            (acc, b)
+            (acc, book)
         });
-    debug!("{:?}", book);
+    debug!("Current costs for {:?}:", b.currency);
+    b.costs.iter().for_each(|c| debug!("{:?}", c));
     Ok(txns)
 }
