@@ -1,8 +1,6 @@
 use std::io;
-use chrono::Weekday::Mon;
 use log::debug;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use crate::transaction::{Currency, Transaction, TransactionType};
 
 
@@ -33,31 +31,31 @@ impl TaxableTransaction {
 #[derive(Debug)]
 struct CostBook {
     currency: Currency,
-    cost_in_cash: Cost,
-    cost_in_coupons: Vec<Cost>,
+    costs: Vec<Cost>,
 }
 
 impl CostBook {
     fn new(currency: Currency, base: Currency) -> CostBook {
-        let cost_in_cash = Cost{
+        let cash = Cost{
             paid_amount: Default::default(),
             exchanged: Cash::new(base, Default::default())
         };
         CostBook {
             currency,
-            cost_in_cash: cost_in_cash,
-            cost_in_coupons: vec![],
+            costs: vec![cash],
         }
     }
 
     fn add_buy(&mut self, t: &Transaction, base: &Currency) {
         if t.exchanged_currency.eq(base) {
-            if let Money::Cash(cash) = &mut self.cost_in_cash.exchanged {
-                cash.amount += t.exchanged_amount;
-                self.cost_in_cash.paid_amount += t.paid_amount;
-            }
+            self.find_cash_mut().map(|cost| {
+                if let Money::Cash(cash) = &mut cost.exchanged {
+                    cash.amount += t.exchanged_amount;
+                    cost.paid_amount += t.paid_amount;
+                }
+            });
         } else {
-            self.cost_in_coupons.push(Cost{
+            self.costs.push(Cost{
                 paid_amount: t.paid_amount,
                 exchanged: Coupon::new(t.exchanged_currency.clone(), t.exchanged_amount, t.date.clone())
             });
@@ -66,12 +64,22 @@ impl CostBook {
 
     fn add_sell(&mut self, t: &Transaction, base: &Currency) {
         if t.exchanged_currency.eq(base) {
-            if self.cost_in_cash.paid_amount >= t.paid_amount {
-                self.cost_in_cash.deduct(&t.paid_amount);
-            }
+            self.find_cash_mut().map(|cost| {
+                if cost.paid_amount >= t.paid_amount {
+                    cost.deduct(&t.paid_amount);
+                }
+            });
         }
     }
 
+    fn find_cash_mut(&mut self) -> Option<&mut Cost> {
+        self.costs.iter_mut().find(|c| {
+            match c.exchanged {
+                Money::Cash(_) => true,
+                Money::Coupon(_) => false
+            }
+        })
+    }
 }
 
 #[derive(Debug)]
