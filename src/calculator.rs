@@ -8,6 +8,7 @@ use crate::transaction::{Currency, Transaction, TransactionType};
 // 2. Bought Crypto 1 from SEK      (cost in SEK),  sold to Crypto 2 (SEK price as sales)
 // 3. Bought from Crypto 2 (SEK price as cost),     sold to Crypto 3 (SEK price as sales)
 // 4. Bought from Crypto 3 (SEK price as cost),     sold to SEK      (sales in SEK)
+#[derive(Debug)]
 pub(crate) struct TaxableTransaction {
     currency: Currency,             // Valutakod
     amount: Decimal,                // Antal
@@ -68,9 +69,35 @@ impl CostBook {
         if t.exchanged_currency.eq(base) {
             self.find_cash_mut().map(|cost| {
                 if cost.paid_amount >= t.paid_amount {
-                    cost.deduct(&t.paid_amount);
+                    // TODO tax report
+                    let x = cost.deduct(&t.paid_amount)
+                        .map(|cost| {
+                            TaxableTransaction{
+                                currency: t.paid_currency.clone(),
+                                amount: t.paid_amount,
+                                income: Cash::new(t.exchanged_currency.clone(), t.exchanged_amount),
+                                cost: vec![cost],
+                                net_income: None
+                            }
+                        }).unwrap();
+                    debug!("{:?}", x);
+                } else {
+                    // TODO partial tax report,
+                    let x = cost.deduct(&cost.paid_amount.clone())
+                        .map(|cost| {
+                            TaxableTransaction{
+                                currency: t.paid_currency.clone(),
+                                amount: t.paid_amount,
+                                income: Cash::new(t.exchanged_currency.clone(), t.exchanged_amount),
+                                cost: vec![cost],
+                                net_income: None
+                            }
+                        }).unwrap();
+                    debug!("{:?}", x);
                 }
             });
+        } else {
+            let x = Coupon::new(t.exchanged_currency.clone(), t.exchanged_amount, t.date.clone());
         }
     }
 
@@ -91,11 +118,13 @@ struct Cost {
 }
 
 impl Cost {
-    fn deduct(&mut self, paid_amount: &Decimal) {
+    fn deduct(&mut self, paid_amount: &Decimal) -> Option<Money> {
         if let Money::Cash(c) = &mut self.exchanged {
+            let deducted = Cash::new(c.currency.clone(), c.amount * paid_amount / self.paid_amount);
             c.amount += c.amount * paid_amount / self.paid_amount;
             self.paid_amount += paid_amount;
-        }
+            Some(deducted)
+        } else { None }
     }
 }
 
