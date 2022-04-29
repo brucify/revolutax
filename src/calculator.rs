@@ -1,5 +1,5 @@
 use std::io;
-use std::ops::Sub;
+use std::ops::{Neg, Sub};
 use log::debug;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -66,10 +66,11 @@ impl CostBook {
 
     // TODO
     fn add_sell(&mut self, transaction: &Transaction) {
+        debug!("current costs: {:?}", self.costs);
         let income = transaction.to_money(&self.base);
-        debug!("income: {:?}", income);
-        let cost = self.find_cost(&income, transaction.paid_amount);
-        debug!("cost: {:?}", cost);
+        debug!("income for {:?} {:?}: {:?}", transaction.paid_amount, transaction.paid_currency, income);
+        let costs = self.find_cost(&income, transaction.paid_amount).unwrap();
+        debug!("costs: {:?}", costs);
         // TODO deduct found cost from self
 
         if transaction.exchanged_currency.eq(&self.base) {
@@ -118,59 +119,54 @@ impl CostBook {
         })
     }
 
-    fn find_cost(&self, income: &Money, paid_amount: Decimal) -> Option<Vec<Cost>> {
+    fn find_cost(&self, income: &Money, paid_amount: Decimal) -> io::Result<Vec<Cost>> {
         match income {
-            Money::Cash(_) => {
-                let (remaining, costs) = self.find_cash_costs(paid_amount, vec![]);
-                let (remaining, costs) = self.find_coupon_costs(remaining, costs);
-                Some(costs)
-            }
-            Money::Coupon(_) => {
-                let (remaining, costs) = self.find_coupon_costs(paid_amount, vec![]);
-                let (remaining, costs) = self.find_cash_costs(remaining, costs);
-                Some(costs)
-            }
+            Money::Cash(_) => do_find_costs(&self.costs, paid_amount, vec![maybe_cash_cost, maybe_coupon_cost]),
+            Money::Coupon(_) => do_find_costs(&self.costs, paid_amount, vec![maybe_coupon_cost, maybe_cash_cost])
         }
     }
+}
 
-    fn find_coupon_costs(&self, remaining: Decimal, costs: Vec<Cost>) -> (Decimal, Vec<Cost>) {
-        self.costs.iter()
-            .fold((remaining, costs), |(remaining, mut acc), cost| {
-                if remaining.eq(&dec!(0)) {
-                    (remaining, acc)
-                } else {
-                    let amount = remaining.min(cost.paid_amount);
-                    match &cost.exchanged {
-                        Money::Cash(_) => (remaining, acc),
-                        Money::Coupon(coupon) => {
-                            let coupon = Coupon::new(self.base.clone(), coupon.amount / cost.paid_amount * amount, coupon.date.clone());
-                            let coupon_cost = Cost::new(remaining, coupon);
-                            acc.push(coupon_cost);
+fn do_find_costs(costs: &Vec<Cost>, remaining: Decimal, funs: Vec<fn(&Cost, Decimal) -> Option<Cost>>) -> io::Result<Vec<Cost>> {
+    let (remaining, costs) =
+        funs.iter().fold((remaining, vec![]), |(remaining, acc), fun| {
+            costs.iter().fold((remaining, acc), |(remaining, mut acc), cost| {
+                if remaining.eq(&dec!(0)) { (remaining, acc) }
+                else {
+                    let amount = remaining.max(cost.paid_amount.neg());
+                    match fun(cost, amount) {
+                        None => (remaining, acc),
+                        Some(cost) => {
+                            acc.push(cost);
                             (remaining.sub(amount), acc)
                         }
                     }
                 }
             })
+        });
+    remaining.eq(&dec!(0)).then(|| ()).ok_or(io::Error::from(io::ErrorKind::InvalidData))?;
+    Ok(costs)
+}
+
+fn maybe_coupon_cost(cost: &Cost, amount: Decimal) -> Option<Cost> {
+    match &cost.exchanged {
+        Money::Cash(_) => None,
+        Money::Coupon(coupon) => {
+            let coupon = Coupon::new(coupon.currency.clone(), coupon.amount / cost.paid_amount * amount.abs(), coupon.date.clone());
+            let coupon_cost = Cost::new(amount.neg(), coupon);
+            Some(coupon_cost)
+        }
     }
+}
 
-    fn find_cash_costs(&self, paid_amount: Decimal, costs: Vec<Cost>) -> (Decimal, Vec<Cost>) {
-        self.costs.iter()
-            .fold((paid_amount, costs), |(remaining, mut acc), cost| {
-                if remaining.eq(&dec!(0)) {
-                    (remaining, acc)
-                } else {
-                    let amount = remaining.min(cost.paid_amount);
-                    match &cost.exchanged {
-                        Money::Coupon(_) => (remaining, acc),
-                        Money::Cash(cash) => {
-                            let cash = Cash::new(self.base.clone(), cash.amount / cost.paid_amount * amount);
-                            let cash_cost = Cost::new(remaining, cash);
-                            acc.push(cash_cost);
-                            (remaining.sub(amount), acc)
-                        }
-                    }
-                }
-            })
+fn maybe_cash_cost(cost: &Cost, amount: Decimal) -> Option<Cost> {
+    match &cost.exchanged {
+        Money::Coupon(_) => None,
+        Money::Cash(cash) => {
+            let cash = Cash::new(cash.currency.clone(), cash.amount / cost.paid_amount * amount.abs());
+            let cash_cost = Cost::new(amount.neg(), cash);
+            Some(cash_cost)
+        }
     }
 }
 
