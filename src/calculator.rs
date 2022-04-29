@@ -12,23 +12,12 @@ use crate::transaction::{Currency, Transaction, TransactionType};
 // 4. Bought from Crypto 3 (SEK price as cost),     sold to SEK      (sales in SEK)
 #[derive(Debug)]
 pub(crate) struct TaxableTransaction {
+    date: String,
     currency: Currency,             // Valutakod
     amount: Decimal,                // Antal
     income: Money,                  // Försäljningspris
-    cost: Vec<Money>,               // Omkostnadsbelopp
+    costs: Vec<Money>,               // Omkostnadsbelopp
     net_income: Option<Decimal>,    // Vinst/förlust
-}
-
-impl TaxableTransaction {
-    fn new(currency: Currency, sales: Money) -> TaxableTransaction {
-        TaxableTransaction{
-            currency,
-            income: sales,
-            amount: Default::default(),
-            cost: Default::default(),
-            net_income: Default::default(),
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -64,50 +53,18 @@ impl CostBook {
         }
     }
 
-    // TODO
-    fn add_sell(&mut self, transaction: &Transaction) {
-        debug!("current costs: {:?}", self.costs);
+    fn add_sell(&mut self, transaction: &Transaction) -> io::Result<TaxableTransaction> {
         let income = transaction.to_money(&self.base);
-        debug!("income for {:?} {:?}: {:?}", transaction.paid_amount, transaction.paid_currency, income);
-        let costs = self.find_cost(&income, transaction.paid_amount).unwrap();
-        debug!("costs: {:?}", costs);
-        // TODO deduct found cost from self
-
-        if transaction.exchanged_currency.eq(&self.base) {
-            self.find_cash_mut().map(|cost| {
-                if cost.paid_amount >= transaction.paid_amount {
-                    // TODO tax report
-                    let x = cost.deduct(&transaction.paid_amount)
-                        .map(|cost| {
-                            TaxableTransaction{
-                                currency: transaction.paid_currency.clone(),
-                                amount: transaction.paid_amount,
-                                // income: transaction.to_money(&self.base),
-                                income: Cash::new(transaction.exchanged_currency.clone(), transaction.exchanged_amount),
-                                cost: vec![cost],
-                                net_income: None
-                            }
-                        }).unwrap();
-                    debug!("{:?}", x);
-                } else {
-                    // TODO partial tax report,
-                    let x = cost.deduct(&cost.paid_amount.clone())
-                        .map(|cost| {
-                            TaxableTransaction{
-                                currency: transaction.paid_currency.clone(),
-                                amount: transaction.paid_amount,
-                                // income: transaction.to_money(&self.base),
-                                income: Cash::new(transaction.exchanged_currency.clone(), transaction.exchanged_amount),
-                                cost: vec![cost],
-                                net_income: None
-                            }
-                        }).unwrap();
-                    debug!("{:?}", x);
-                }
-            });
-        } else {
-            let x = Coupon::new(transaction.exchanged_currency.clone(), transaction.exchanged_amount, transaction.date.clone());
-        }
+        let costs = self.find_and_deduct_cost(&income, transaction.paid_amount)?;
+        let costs = costs.into_iter().map(|c| c.exchanged).collect();
+        Ok(TaxableTransaction{
+            date: transaction.date.clone(),
+            currency: transaction.paid_currency.clone(),
+            amount: transaction.paid_amount,
+            income,
+            costs,
+            net_income: None
+        })
     }
 
     fn find_cash_mut(&mut self) -> Option<&mut Cost> {
@@ -119,18 +76,18 @@ impl CostBook {
         })
     }
 
-    fn find_cost(&self, income: &Money, paid_amount: Decimal) -> io::Result<Vec<Cost>> {
+    fn find_and_deduct_cost(&mut self, income: &Money, paid_amount: Decimal) -> io::Result<Vec<Cost>> {
         match income {
-            Money::Cash(_) => do_find_costs(&self.costs, paid_amount, vec![maybe_cash_cost, maybe_coupon_cost]),
-            Money::Coupon(_) => do_find_costs(&self.costs, paid_amount, vec![maybe_coupon_cost, maybe_cash_cost])
+            Money::Cash(_) => do_find_and_deduct_cost(&mut self.costs, paid_amount, vec![deduct_cash_cost, deduct_coupon_cost]),
+            Money::Coupon(_) => do_find_and_deduct_cost(&mut self.costs, paid_amount, vec![deduct_coupon_cost, deduct_cash_cost])
         }
     }
 }
 
-fn do_find_costs(costs: &Vec<Cost>, remaining: Decimal, funs: Vec<fn(&Cost, Decimal) -> Option<Cost>>) -> io::Result<Vec<Cost>> {
+fn do_find_and_deduct_cost(costs: &mut Vec<Cost>, remaining: Decimal, funs: Vec<fn(&mut Cost, Decimal) -> Option<Cost>>) -> io::Result<Vec<Cost>> {
     let (remaining, costs) =
         funs.iter().fold((remaining, vec![]), |(remaining, acc), fun| {
-            costs.iter().fold((remaining, acc), |(remaining, mut acc), cost| {
+            costs.iter_mut().fold((remaining, acc), |(remaining, mut acc), cost| {
                 if remaining.eq(&dec!(0)) { (remaining, acc) }
                 else {
                     let amount = remaining.max(cost.paid_amount.neg());
@@ -148,23 +105,39 @@ fn do_find_costs(costs: &Vec<Cost>, remaining: Decimal, funs: Vec<fn(&Cost, Deci
     Ok(costs)
 }
 
-fn maybe_coupon_cost(cost: &Cost, amount: Decimal) -> Option<Cost> {
-    match &cost.exchanged {
+fn deduct_coupon_cost(cost: &mut Cost, amount: Decimal) -> Option<Cost> {
+    match &mut cost.exchanged {
         Money::Cash(_) => None,
         Money::Coupon(coupon) => {
-            let coupon = Coupon::new(coupon.currency.clone(), coupon.amount / cost.paid_amount * amount.abs(), coupon.date.clone());
-            let coupon_cost = Cost::new(amount.neg(), coupon);
+            let used_cost_amount = coupon.amount / cost.paid_amount * amount.abs();
+            let paid_amount = amount.neg();
+            let c = Coupon::new(coupon.currency.clone(), used_cost_amount, coupon.date.clone());
+            let coupon_cost = Cost::new(paid_amount, c);
+
+            // deduct used cost from current cost
+            coupon.amount -= used_cost_amount;
+            cost.paid_amount -= paid_amount;
+
+            // return deducted cost
             Some(coupon_cost)
         }
     }
 }
 
-fn maybe_cash_cost(cost: &Cost, amount: Decimal) -> Option<Cost> {
-    match &cost.exchanged {
+fn deduct_cash_cost(cost: &mut Cost, amount: Decimal) -> Option<Cost> {
+    match &mut cost.exchanged {
         Money::Coupon(_) => None,
         Money::Cash(cash) => {
-            let cash = Cash::new(cash.currency.clone(), cash.amount / cost.paid_amount * amount.abs());
-            let cash_cost = Cost::new(amount.neg(), cash);
+            let used_cost_amount = cash.amount / cost.paid_amount * amount.abs();
+            let paid_amount = amount.neg();
+            let c = Cash::new(cash.currency.clone(), used_cost_amount);
+            let cash_cost = Cost::new(paid_amount, c);
+
+            // deduct used cost from current cost
+            cash.amount -= used_cost_amount;
+            cost.paid_amount -= paid_amount;
+
+            // return deducted cost
             Some(cash_cost)
         }
     }
@@ -189,15 +162,6 @@ struct Cost {
 impl Cost {
     fn new(paid_amount: Decimal, exchanged: Money) -> Cost {
         Cost{ paid_amount, exchanged }
-    }
-
-    fn deduct(&mut self, paid_amount: &Decimal) -> Option<Money> {
-        if let Money::Cash(c) = &mut self.exchanged {
-            let deducted = Cash::new(c.currency.clone(), c.amount * paid_amount / self.paid_amount);
-            c.amount += c.amount * paid_amount / self.paid_amount;
-            self.paid_amount += paid_amount;
-            Some(deducted)
-        } else { None }
     }
 }
 
@@ -230,14 +194,19 @@ impl Coupon {
 pub(crate) async fn tax(txns: &Vec<Transaction>, currency: &Currency, base: &Currency) -> io::Result<Vec<TaxableTransaction>> {
     let (txns, b) =
         txns.iter().fold((vec![], CostBook::new(currency.clone(), base.clone())),
-                         |(acc, mut book), t| {
+                         |(mut acc, mut book), t| {
             match t.r#type {
                 TransactionType::Buy => book.add_buy(t),
-                TransactionType::Sell => book.add_sell(t),
+                TransactionType::Sell => {
+                    let x = book.add_sell(t).unwrap();
+                    acc.push(x);
+                },
             }
             (acc, book)
         });
-    debug!("Current costs for {:?}:", b.currency);
+    debug!("Remaining costs for {:?}:", b.currency);
     b.costs.iter().for_each(|c| debug!("{:?}", c));
+    debug!("Taxable transactions:");
+    txns.iter().for_each(|t| debug!("{:?}", t));
     Ok(txns)
 }
