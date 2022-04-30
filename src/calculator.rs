@@ -24,18 +24,19 @@ pub(crate) struct TaxableTransaction {
 struct Cost {
     paid_amount: Decimal,
     exchanged: Money,
+    is_vault: bool,
 }
 
 impl Cost {
-    fn new(paid_amount: Decimal, exchanged: Money) -> Cost {
-        Cost{ paid_amount, exchanged }
+    fn new(paid_amount: Decimal, exchanged: Money, is_vault: bool) -> Cost {
+        Cost{ paid_amount, exchanged, is_vault }
     }
 
     fn deduct(&mut self, paid_amount: Decimal) -> Option<Cost> {
         let exchanged_amount = self.exchanged.amount() / self.paid_amount * paid_amount.abs();
         let deducted = self.exchanged.deduct(exchanged_amount);
         self.paid_amount += paid_amount;
-        let deducted_cost = Cost::new(paid_amount.neg(), deducted);
+        let deducted_cost = Cost::new(paid_amount.neg(), deducted, self.is_vault);
         Some(deducted_cost)
     }
 }
@@ -56,18 +57,18 @@ impl CostBook {
         }
     }
 
-    fn add_buy(&mut self, t: &Transaction) {
-        match t.to_money(&self.base) {
+    fn add_buy(&mut self, transaction: &Transaction) {
+        match transaction.to_money(&self.base) {
             Money::Cash(income) => {
-                self.find_cash_cost_mut().map(|cost| {
+                self.find_cash_cost_mut(transaction.is_vault).map(|cost| {
                     if let Money::Cash(cash) = &mut cost.exchanged {
                         cash.amount += income.amount;
-                        cost.paid_amount += t.paid_amount;
+                        cost.paid_amount += transaction.paid_amount;
                     }
                 });
             }
             income @ Money::Coupon(_) => {
-                let coupon_cost = Cost::new(t.paid_amount, income);
+                let coupon_cost = Cost::new(transaction.paid_amount, income, transaction.is_vault);
                 self.costs.push(coupon_cost);
             }
         }
@@ -75,8 +76,11 @@ impl CostBook {
 
     fn add_sell(&mut self, transaction: &Transaction) -> io::Result<TaxableTransaction> {
         let income = transaction.to_money(&self.base);
-        let costs = self.find_and_deduct_cost(&income, transaction.paid_amount)?;
-        let costs = costs.into_iter().map(|c| c.exchanged).collect();
+        let costs =
+            self.find_and_deduct_cost(&income, transaction.paid_amount)?
+                .into_iter()
+                .map(|c| c.exchanged)
+                .collect();
         Ok(TaxableTransaction{
             date: transaction.date.clone(),
             currency: transaction.paid_currency.clone(),
@@ -87,11 +91,11 @@ impl CostBook {
         })
     }
 
-    fn find_cash_cost_mut(&mut self) -> Option<&mut Cost> {
+    fn find_cash_cost_mut(&mut self, is_vault: bool) -> Option<&mut Cost> {
         match self.costs.iter().find(|c| c.exchanged.is_cash()) {
             None => {
                 let cash = Money::new_cash(self.base.clone(), Default::default());
-                let cash_cost = Cost::new(Default::default(), cash);
+                let cash_cost = Cost::new(Default::default(), cash, is_vault);
                 self.costs.push(cash_cost);
                 self.costs.last_mut()
             }
@@ -103,8 +107,16 @@ impl CostBook {
 
     fn find_and_deduct_cost(&mut self, income: &Money, paid_amount: Decimal) -> io::Result<Vec<Cost>> {
         match income {
-            Money::Cash(_) => do_find_and_deduct_cost(&mut self.costs, paid_amount, vec![deduct_cash_cost, deduct_coupon_cost]),
-            Money::Coupon(_) => do_find_and_deduct_cost(&mut self.costs, paid_amount, vec![deduct_coupon_cost, deduct_cash_cost])
+            Money::Cash(_) => do_find_and_deduct_cost(
+                &mut self.costs,
+                paid_amount,
+                vec![deduct_cash_cost, deduct_coupon_cost, deduct_vault_cash_cost, deduct_vault_coupon_cost]
+            ),
+            Money::Coupon(_) => do_find_and_deduct_cost(
+                &mut self.costs,
+                paid_amount,
+                vec![deduct_coupon_cost, deduct_cash_cost, deduct_vault_coupon_cost, deduct_vault_cash_cost]
+            )
         }
     }
 }
@@ -112,7 +124,7 @@ impl CostBook {
 fn do_find_and_deduct_cost(costs: &mut Vec<Cost>, remaining: Decimal, funs: Vec<fn(&mut Cost, Decimal) -> Option<Cost>>) -> io::Result<Vec<Cost>> {
     let (remaining, costs): (Decimal, Vec<Cost>) =
         funs.iter().fold((remaining, vec![]), |(remaining, acc), fun| {
-            let (remaining, acc) = costs.iter_mut().fold((remaining, acc), |(remaining, mut acc), cost| {
+            let (remaining, acc) = costs.iter_mut().rev().fold((remaining, acc), |(remaining, mut acc), cost| {
                 if remaining.eq(&dec!(0)) { (remaining, acc) }
                 else {
                     let amount = remaining.max(cost.paid_amount.neg());
@@ -133,16 +145,30 @@ fn do_find_and_deduct_cost(costs: &mut Vec<Cost>, remaining: Decimal, funs: Vec<
 }
 
 fn deduct_coupon_cost(cost: &mut Cost, paid_amount: Decimal) -> Option<Cost> {
-    match &cost.exchanged {
-        Money::Cash(_) => None,
-        Money::Coupon(_) => cost.deduct(paid_amount)
+    match (&cost.exchanged, cost.is_vault) {
+        (Money::Coupon(_), false) => cost.deduct(paid_amount),
+        _ => None,
     }
 }
 
 fn deduct_cash_cost(cost: &mut Cost, paid_amount: Decimal) -> Option<Cost> {
-    match &cost.exchanged {
-        Money::Coupon(_) => None,
-        Money::Cash(_) => cost.deduct(paid_amount)
+    match (&cost.exchanged, cost.is_vault) {
+        (Money::Cash(_), false) => cost.deduct(paid_amount),
+        _ => None,
+    }
+}
+
+fn deduct_vault_coupon_cost(cost: &mut Cost, paid_amount: Decimal) -> Option<Cost> {
+    match (&cost.exchanged, cost.is_vault) {
+        (Money::Coupon(_), true) => cost.deduct(paid_amount),
+        _ => None,
+    }
+}
+
+fn deduct_vault_cash_cost(cost: &mut Cost, paid_amount: Decimal) -> Option<Cost> {
+    match (&cost.exchanged, cost.is_vault) {
+        (Money::Cash(_), true) => cost.deduct(paid_amount),
+        _ => None,
     }
 }
 

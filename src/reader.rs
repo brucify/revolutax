@@ -157,6 +157,9 @@ impl Row {
             txn.exchanged_amount = self.amount + self.fee;
             txn.exchanged_currency = self.currency.clone();
         }
+        if self.description.contains("Vault") {
+            txn.is_vault = true;
+        }
         txn
     }
 }

@@ -8,6 +8,7 @@ pub(crate) struct Transaction {
     pub(crate) exchanged_currency: Currency,
     pub(crate) exchanged_amount: Decimal,
     pub(crate) date: String,
+    pub(crate) is_vault: bool,
 }
 
 impl Transaction {
@@ -18,7 +19,8 @@ impl Transaction {
             paid_amount: Default::default(),
             exchanged_currency: "".to_string(),
             exchanged_amount: Default::default(),
-            date: "".to_string()
+            date: "".to_string(),
+            is_vault: false
         }
     }
 
