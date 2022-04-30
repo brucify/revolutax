@@ -27,7 +27,7 @@ pub fn print_exchanges_in_currency(path: &PathBuf, currency: &String) -> io::Res
     let rows = block_on(reader::read_exchanges_in_currency(path, currency))?;
     debug!("deserialize_from_path done. Elapsed: {:.2?}", now.elapsed());
 
-    rows.iter().for_each(|t| info!("{:?}", t));
+    rows.iter().for_each(|t| debug!("{:?}", t));
 
     let now = std::time::Instant::now();
     block_on(reader::print_rows(&rows))?;
@@ -43,15 +43,14 @@ pub fn calculate_tax(path: &PathBuf, currency: &String) -> io::Result<()> {
     let rows = block_on(reader::read_exchanges_in_currency(path, currency))?;
     debug!("deserialize_from_path done. Elapsed: {:.2?}", now.elapsed());
 
-    rows.iter().for_each(|t| info!("{:?}", t));
+    rows.iter().for_each(|t| debug!("{:?}", t));
 
     let now = std::time::Instant::now();
     let txns =  block_on(reader::to_transactions(&rows, currency))?;
 
-    txns.iter().for_each(|t| info!("{:?}", t));
+    txns.iter().for_each(|t| debug!("{:?}", t));
 
     let _ =  block_on(calculator::tax(&txns, currency, &"SEK".to_string()))?;
-
 
     block_on(reader::print_rows(&rows))?;
     debug!("print_transactions done. Elapsed: {:.2?}", now.elapsed());

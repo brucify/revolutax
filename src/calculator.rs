@@ -3,7 +3,7 @@ use std::ops::{Neg, Sub};
 use log::debug;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use crate::transaction::{Currency, Transaction, TransactionType};
+use crate::transaction::{Currency, Transaction, TransactionType, Money};
 
 
 // 1. Bought Crypto 1 from SEK      (cost in SEK),  sold to SEK      (sales in SEK)
@@ -21,6 +21,18 @@ pub(crate) struct TaxableTransaction {
 }
 
 #[derive(Debug)]
+struct Cost {
+    paid_amount: Decimal,
+    exchanged: Money,
+}
+
+impl Cost {
+    fn new(paid_amount: Decimal, exchanged: Money) -> Cost {
+        Cost{ paid_amount, exchanged }
+    }
+}
+
+#[derive(Debug)]
 struct CostBook {
     base: Currency,
     currency: Currency,
@@ -29,7 +41,7 @@ struct CostBook {
 
 impl CostBook {
     fn new(currency: Currency, base: Currency) -> CostBook {
-        let cash = Cash::new(base.clone(), Default::default());
+        let cash = Money::new_cash(base.clone(), Default::default());
         let cash_cost = Cost::new(Default::default(), cash);
         CostBook {
             base,
@@ -47,7 +59,7 @@ impl CostBook {
                 }
             });
         } else {
-            let coupon = Coupon::new(t.exchanged_currency.clone(), t.exchanged_amount, t.date.clone());
+            let coupon = Money::new_coupon(t.exchanged_currency.clone(), t.exchanged_amount, t.date.clone());
             let coupon_cost = Cost::new(t.paid_amount, coupon);
             self.costs.push(coupon_cost);
         }
@@ -68,12 +80,7 @@ impl CostBook {
     }
 
     fn find_cash_mut(&mut self) -> Option<&mut Cost> {
-        self.costs.iter_mut().find(|c| {
-            match c.exchanged {
-                Money::Cash(_) => true,
-                Money::Coupon(_) => false
-            }
-        })
+        self.costs.iter_mut().find(|c| c.exchanged.is_cash())
     }
 
     fn find_and_deduct_cost(&mut self, income: &Money, paid_amount: Decimal) -> io::Result<Vec<Cost>> {
@@ -85,9 +92,9 @@ impl CostBook {
 }
 
 fn do_find_and_deduct_cost(costs: &mut Vec<Cost>, remaining: Decimal, funs: Vec<fn(&mut Cost, Decimal) -> Option<Cost>>) -> io::Result<Vec<Cost>> {
-    let (remaining, costs) =
+    let (remaining, costs): (Decimal, Vec<Cost>) =
         funs.iter().fold((remaining, vec![]), |(remaining, acc), fun| {
-            costs.iter_mut().fold((remaining, acc), |(remaining, mut acc), cost| {
+            let (remaining, acc) = costs.iter_mut().fold((remaining, acc), |(remaining, mut acc), cost| {
                 if remaining.eq(&dec!(0)) { (remaining, acc) }
                 else {
                     let amount = remaining.max(cost.paid_amount.neg());
@@ -99,7 +106,9 @@ fn do_find_and_deduct_cost(costs: &mut Vec<Cost>, remaining: Decimal, funs: Vec<
                         }
                     }
                 }
-            })
+            });
+            costs.retain(|c| !c.paid_amount.is_zero());
+            (remaining, acc)
         });
     remaining.eq(&dec!(0)).then(|| ()).ok_or(io::Error::from(io::ErrorKind::InvalidData))?;
     Ok(costs)
@@ -111,7 +120,7 @@ fn deduct_coupon_cost(cost: &mut Cost, amount: Decimal) -> Option<Cost> {
         Money::Coupon(coupon) => {
             let used_cost_amount = coupon.amount / cost.paid_amount * amount.abs();
             let paid_amount = amount.neg();
-            let c = Coupon::new(coupon.currency.clone(), used_cost_amount, coupon.date.clone());
+            let c = Money::new_coupon(coupon.currency.clone(), used_cost_amount, coupon.date.clone());
             let coupon_cost = Cost::new(paid_amount, c);
 
             // deduct used cost from current cost
@@ -130,7 +139,7 @@ fn deduct_cash_cost(cost: &mut Cost, amount: Decimal) -> Option<Cost> {
         Money::Cash(cash) => {
             let used_cost_amount = cash.amount / cost.paid_amount * amount.abs();
             let paid_amount = amount.neg();
-            let c = Cash::new(cash.currency.clone(), used_cost_amount);
+            let c = Money::new_cash(cash.currency.clone(), used_cost_amount);
             let cash_cost = Cost::new(paid_amount, c);
 
             // deduct used cost from current cost
@@ -140,54 +149,6 @@ fn deduct_cash_cost(cost: &mut Cost, amount: Decimal) -> Option<Cost> {
             // return deducted cost
             Some(cash_cost)
         }
-    }
-}
-
-impl Transaction {
-    fn to_money(&self, base: &Currency) -> Money {
-        if self.exchanged_currency.eq(base) {
-            Cash::new(self.exchanged_currency.clone(), self.exchanged_amount)
-        } else {
-            Coupon::new(self.exchanged_currency.clone(), self.exchanged_amount, self.date.clone())
-        }
-    }
-}
-
-#[derive(Debug)]
-struct Cost {
-    paid_amount: Decimal,
-    exchanged: Money,
-}
-
-impl Cost {
-    fn new(paid_amount: Decimal, exchanged: Money) -> Cost {
-        Cost{ paid_amount, exchanged }
-    }
-}
-
-#[derive(Debug)]
-enum Money {
-    Cash(Cash),
-    Coupon(Coupon),
-}
-
-#[derive(Debug)]
-struct Cash { currency: Currency, amount: Decimal }
-
-#[derive(Debug)]
-struct Coupon { currency: Currency, amount: Decimal, date: String }
-
-impl Cash {
-    fn new(currency: Currency, amount: Decimal) -> Money {
-        let cash = Cash{ currency, amount };
-        Money::Cash(cash)
-    }
-}
-
-impl Coupon {
-    fn new(currency: Currency, amount: Decimal, date: String) -> Money {
-        let coupon = Coupon{ currency, amount, date };
-        Money::Coupon(coupon)
     }
 }
 
