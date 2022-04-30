@@ -75,7 +75,7 @@ impl CostBook {
             amount: transaction.paid_amount,
             income,
             costs,
-            net_income: None
+            net_income: None // TODO
         })
     }
 
