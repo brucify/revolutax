@@ -41,27 +41,27 @@ struct CostBook {
 
 impl CostBook {
     fn new(currency: Currency, base: Currency) -> CostBook {
-        let cash = Money::new_cash(base.clone(), Default::default());
-        let cash_cost = Cost::new(Default::default(), cash);
         CostBook {
             base,
             currency,
-            costs: vec![cash_cost],
+            costs: vec![],
         }
     }
 
     fn add_buy(&mut self, t: &Transaction) {
-        if t.exchanged_currency.eq(&self.base) {
-            self.find_cash_mut().map(|cost| {
-                if let Money::Cash(cash) = &mut cost.exchanged {
-                    cash.amount += t.exchanged_amount;
-                    cost.paid_amount += t.paid_amount;
-                }
-            });
-        } else {
-            let coupon = Money::new_coupon(t.exchanged_currency.clone(), t.exchanged_amount, t.date.clone());
-            let coupon_cost = Cost::new(t.paid_amount, coupon);
-            self.costs.push(coupon_cost);
+        match t.to_money(&self.base) {
+            Money::Cash(income) => {
+                self.find_cash_cost_mut().map(|cost| {
+                    if let Money::Cash(cash) = &mut cost.exchanged {
+                        cash.amount += income.amount;
+                        cost.paid_amount += t.paid_amount;
+                    }
+                });
+            }
+            income@ Money::Coupon(_) => {
+                let coupon_cost = Cost::new(t.paid_amount, income);
+                self.costs.push(coupon_cost);
+            }
         }
     }
 
@@ -79,8 +79,18 @@ impl CostBook {
         })
     }
 
-    fn find_cash_mut(&mut self) -> Option<&mut Cost> {
-        self.costs.iter_mut().find(|c| c.exchanged.is_cash())
+    fn find_cash_cost_mut(&mut self) -> Option<&mut Cost> {
+        match self.costs.iter().find(|c| c.exchanged.is_cash()) {
+            None => {
+                let cash = Money::new_cash(self.base.clone(), Default::default());
+                let cash_cost = Cost::new(Default::default(), cash);
+                self.costs.push(cash_cost);
+                self.costs.last_mut()
+            }
+            Some(_) => {
+                self.costs.iter_mut().find(|c| c.exchanged.is_cash())
+            }
+        }
     }
 
     fn find_and_deduct_cost(&mut self, income: &Money, paid_amount: Decimal) -> io::Result<Vec<Cost>> {
@@ -153,9 +163,9 @@ fn deduct_cash_cost(cost: &mut Cost, amount: Decimal) -> Option<Cost> {
 }
 
 pub(crate) async fn tax(txns: &Vec<Transaction>, currency: &Currency, base: &Currency) -> io::Result<Vec<TaxableTransaction>> {
+    let book = CostBook::new(currency.clone(), base.clone());
     let (txns, b) =
-        txns.iter().fold((vec![], CostBook::new(currency.clone(), base.clone())),
-                         |(mut acc, mut book), t| {
+        txns.iter().fold((vec![], book), |(mut acc, mut book), t| {
             match t.r#type {
                 TransactionType::Buy => book.add_buy(t),
                 TransactionType::Sell => {
