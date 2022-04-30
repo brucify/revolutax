@@ -30,6 +30,14 @@ impl Cost {
     fn new(paid_amount: Decimal, exchanged: Money) -> Cost {
         Cost{ paid_amount, exchanged }
     }
+
+    fn deduct(&mut self, paid_amount: Decimal) -> Option<Cost> {
+        let exchanged_amount = self.exchanged.amount() / self.paid_amount * paid_amount.abs();
+        let deducted = self.exchanged.deduct(exchanged_amount);
+        self.paid_amount += paid_amount;
+        let deducted_cost = Cost::new(paid_amount.neg(), deducted);
+        Some(deducted_cost)
+    }
 }
 
 #[derive(Debug)]
@@ -58,7 +66,7 @@ impl CostBook {
                     }
                 });
             }
-            income@ Money::Coupon(_) => {
+            income @ Money::Coupon(_) => {
                 let coupon_cost = Cost::new(t.paid_amount, income);
                 self.costs.push(coupon_cost);
             }
@@ -124,41 +132,17 @@ fn do_find_and_deduct_cost(costs: &mut Vec<Cost>, remaining: Decimal, funs: Vec<
     Ok(costs)
 }
 
-fn deduct_coupon_cost(cost: &mut Cost, amount: Decimal) -> Option<Cost> {
-    match &mut cost.exchanged {
+fn deduct_coupon_cost(cost: &mut Cost, paid_amount: Decimal) -> Option<Cost> {
+    match &cost.exchanged {
         Money::Cash(_) => None,
-        Money::Coupon(coupon) => {
-            let used_cost_amount = coupon.amount / cost.paid_amount * amount.abs();
-            let paid_amount = amount.neg();
-            let c = Money::new_coupon(coupon.currency.clone(), used_cost_amount, coupon.date.clone());
-            let coupon_cost = Cost::new(paid_amount, c);
-
-            // deduct used cost from current cost
-            coupon.amount -= used_cost_amount;
-            cost.paid_amount -= paid_amount;
-
-            // return deducted cost
-            Some(coupon_cost)
-        }
+        Money::Coupon(_) => cost.deduct(paid_amount)
     }
 }
 
-fn deduct_cash_cost(cost: &mut Cost, amount: Decimal) -> Option<Cost> {
-    match &mut cost.exchanged {
+fn deduct_cash_cost(cost: &mut Cost, paid_amount: Decimal) -> Option<Cost> {
+    match &cost.exchanged {
         Money::Coupon(_) => None,
-        Money::Cash(cash) => {
-            let used_cost_amount = cash.amount / cost.paid_amount * amount.abs();
-            let paid_amount = amount.neg();
-            let c = Money::new_cash(cash.currency.clone(), used_cost_amount);
-            let cash_cost = Cost::new(paid_amount, c);
-
-            // deduct used cost from current cost
-            cash.amount -= used_cost_amount;
-            cost.paid_amount -= paid_amount;
-
-            // return deducted cost
-            Some(cash_cost)
-        }
+        Money::Cash(_) => cost.deduct(paid_amount)
     }
 }
 

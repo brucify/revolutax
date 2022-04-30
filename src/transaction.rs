@@ -60,6 +60,26 @@ impl Money {
     pub(crate) fn is_cash(&self) -> bool {
         match self { Money::Cash(_) => true, Money::Coupon(_) => false }
     }
+
+    pub(crate) fn amount(&self) -> Decimal {
+        match self {
+            Money::Cash(cash) => cash.amount,
+            Money::Coupon(coupon) => coupon.amount
+        }
+    }
+
+    pub(crate) fn deduct(&mut self, amount: Decimal) -> Money {
+        match self {
+            Money::Cash(cash) => {
+                cash.amount -= amount;
+                Money::new_cash(cash.currency.clone(), amount)
+            },
+            Money::Coupon(coupon) => {
+                coupon.amount -= amount;
+                Money::new_coupon(coupon.currency.clone(), amount, coupon.date.clone())
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
