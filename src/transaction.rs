@@ -1,4 +1,5 @@
 use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct Transaction {
@@ -80,6 +81,17 @@ impl Money {
                 coupon.amount -= amount;
                 Money::new_coupon(coupon.currency.clone(), amount, coupon.date.clone())
             }
+        }
+    }
+
+    pub(crate) fn to_net_income(&self, costs: &Vec<Money>) -> Option<Decimal> {
+        let all_cash = costs.iter().all(|c| c.is_cash());
+        match (self, all_cash) {
+            (Money::Cash(cash), true) => {
+                let cost = costs.iter().fold(dec!(0), |acc, c| acc + c.amount());
+                Some(cash.amount + cost)
+            }
+            _ => None
         }
     }
 }

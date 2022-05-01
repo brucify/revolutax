@@ -85,13 +85,14 @@ impl CostBook {
                 .into_iter()
                 .map(|c| c.exchanged)
                 .collect();
+        let net_income = income.to_net_income(&costs);
         Ok(TaxableTransaction{
             date: transaction.date.clone(),
             currency: transaction.paid_currency.clone(),
             amount: transaction.paid_amount,
             income,
             costs,
-            net_income: None // TODO
+            net_income
         })
     }
 
