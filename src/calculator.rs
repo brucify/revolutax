@@ -107,42 +107,41 @@ impl CostBook {
 
     fn find_and_deduct_cost(&mut self, income: &Money, paid_amount: Decimal) -> io::Result<Vec<Cost>> {
         match income {
-            Money::Cash(_) => do_find_and_deduct_cost(
-                &mut self.costs,
+            Money::Cash(_) => self.do_find_and_deduct_cost(
                 paid_amount,
                 vec![deduct_cash_cost, deduct_coupon_cost, deduct_vault_cash_cost, deduct_vault_coupon_cost]
             ),
-            Money::Coupon(_) => do_find_and_deduct_cost(
-                &mut self.costs,
+            Money::Coupon(_) => self.do_find_and_deduct_cost(
                 paid_amount,
                 vec![deduct_coupon_cost, deduct_cash_cost, deduct_vault_coupon_cost, deduct_vault_cash_cost]
             )
         }
     }
-}
 
-fn do_find_and_deduct_cost(costs: &mut Vec<Cost>, remaining: Decimal, funs: Vec<fn(&mut Cost, Decimal) -> Option<Cost>>) -> io::Result<Vec<Cost>> {
-    let (remaining, costs): (Decimal, Vec<Cost>) =
-        funs.iter().fold((remaining, vec![]), |(remaining, acc), fun| {
-            let (remaining, acc) = costs.iter_mut().rev().fold((remaining, acc), |(remaining, mut acc), cost| {
-                if remaining.eq(&dec!(0)) { (remaining, acc) }
-                else {
-                    let amount = remaining.max(cost.paid_amount.neg());
-                    match fun(cost, amount) {
-                        None => (remaining, acc),
-                        Some(cost) => {
-                            acc.push(cost);
-                            (remaining.sub(amount), acc)
+    fn do_find_and_deduct_cost(&mut self, remaining: Decimal, funs: Vec<fn(&mut Cost, Decimal) -> Option<Cost>>) -> io::Result<Vec<Cost>> {
+        let (remaining, costs): (Decimal, Vec<Cost>) =
+            funs.iter().fold((remaining, vec![]), |(remaining, acc), fun| {
+                let (remaining, acc) = self.costs.iter_mut().rev().fold((remaining, acc), |(remaining, mut acc), cost| {
+                    if remaining.eq(&dec!(0)) { (remaining, acc) }
+                    else {
+                        let amount = remaining.max(cost.paid_amount.neg());
+                        match fun(cost, amount) {
+                            None => (remaining, acc),
+                            Some(cost) => {
+                                acc.push(cost);
+                                (remaining.sub(amount), acc)
+                            }
                         }
                     }
-                }
+                });
+                self.costs.retain(|c| !c.paid_amount.is_zero());
+                (remaining, acc)
             });
-            costs.retain(|c| !c.paid_amount.is_zero());
-            (remaining, acc)
-        });
-    remaining.eq(&dec!(0)).then(|| ()).ok_or(io::Error::from(io::ErrorKind::InvalidData))?;
-    Ok(costs)
+        remaining.eq(&dec!(0)).then(|| ()).ok_or(io::Error::from(io::ErrorKind::InvalidData))?;
+        Ok(costs)
+    }
 }
+
 
 fn deduct_coupon_cost(cost: &mut Cost, paid_amount: Decimal) -> Option<Cost> {
     match (&cost.exchanged, cost.is_vault) {

@@ -5,7 +5,6 @@ use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::io::{self};
 use std::path::PathBuf;
-// use chrono::NaiveDateTime;
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub(crate) struct Row {
@@ -102,9 +101,9 @@ pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Curren
     Ok(txns)
 }
 
-pub(crate) async fn to_transactions(txns: &Vec<Row>, currency: &Currency) -> io::Result<Vec<Transaction>> {
+pub(crate) async fn to_transactions(rows: &Vec<Row>, currency: &Currency) -> io::Result<Vec<Transaction>> {
     let (txns, _): (Vec<Transaction>, Option<&Row>) =
-        txns.iter().rev()
+        rows.iter().rev()
             .fold((vec![], None), |(mut acc, prev), row| {
                 match prev {
                     None => (acc, Some(row)),
@@ -189,9 +188,235 @@ pub(crate) async fn print_rows(txns: &Vec<Row>) -> io::Result<()>{
 
 #[cfg(test)]
 mod test {
+    use crate::reader::*;
+    use futures::executor::block_on;
+    use rust_decimal_macros::dec;
+    use std::error::Error;
+    use std::io::Write;
+    use std::path::PathBuf;
+    use tempfile::NamedTempFile;
 
     #[test]
-    fn test_read_with() -> Result<(), anyhow::Error> {
+    fn should_deserialize_from_path() -> Result<(), Box<dyn Error>> {
+        /*
+         * Given
+         */
+        let mut file = NamedTempFile::new()?;
+        writeln!(file, "Type,Started Date,Completed Date,Description,Amount,Fee,Currency,Original Amount,Original Currency,Settled Amount,Settled Currency,State,Balance
+                        Exchange,2022-03-01 16:21:49,2022-03-01 16:21:49,Exchanged to EOS,-900.90603463,-20.36495977,DOGE,-900.90603463,DOGE,,,Completed,1078.7290056
+                        Exchange,2022-03-01 16:21:49,2022-03-01 16:21:49,Exchanged from DOGE,50,0,EOS,50,EOS,,,Completed,50
+                        Exchange,2021-12-31 17:54:48,2021-12-31 17:54:48,Exchanged to DOGE,-5000.45,-80.15,SEK,-5000.45,SEK,,,Completed,700.27
+                        Exchange,2021-12-31 17:54:48,2021-12-31 17:54:48,Exchanged from SEK,2000,0,DOGE,2000,DOGE,,,Completed,2000")?;
+        let path = file.path().to_str().unwrap();
+
+        /*
+         * When
+         */
+        let rows = block_on(deserialize_from_path(&PathBuf::from(path)))?;
+
+        /*
+         * Then
+         */
+        let mut iter = rows.into_iter();
+        assert_eq!(iter.next(), Some(Row{
+            r#type: Type::Exchange,
+            started_date: "2022-03-01 16:21:49".to_string(),
+            completed_date: Some("2022-03-01 16:21:49".to_string()),
+            description: "Exchanged to EOS".to_string(),
+            amount: dec!(-900.90603463),
+            fee: dec!(-20.36495977),
+            currency: "DOGE".to_string(),
+            original_amount: dec!(-900.90603463),
+            original_currency: "DOGE".to_string(),
+            settled_amount: None,
+            settled_currency: None,
+            state: State::Completed,
+            balance: Some(dec!(1078.7290056))
+        }));
+        assert_eq!(iter.next(), Some(Row{
+            r#type: Type::Exchange,
+            started_date: "2022-03-01 16:21:49".to_string(),
+            completed_date: Some("2022-03-01 16:21:49".to_string()),
+            description: "Exchanged from DOGE".to_string(),
+            amount: dec!(50),
+            fee: dec!(0),
+            currency: "EOS".to_string(),
+            original_amount: dec!(50),
+            original_currency: "EOS".to_string(),
+            settled_amount: None,
+            settled_currency: None,
+            state: State::Completed,
+            balance: Some(dec!(50))
+        }));
+        assert_eq!(iter.next(), Some(Row{
+            r#type: Type::Exchange,
+            started_date: "2021-12-31 17:54:48".to_string(),
+            completed_date: Some("2021-12-31 17:54:48".to_string()),
+            description: "Exchanged to DOGE".to_string(),
+            amount: dec!(-5000.45),
+            fee: dec!(-80.15),
+            currency: "SEK".to_string(),
+            original_amount: dec!(-5000.45),
+            original_currency: "SEK".to_string(),
+            settled_amount: None,
+            settled_currency: None,
+            state: State::Completed,
+            balance: Some(dec!(700.27))
+        }));
+        assert_eq!(iter.next(), Some(Row{
+            r#type: Type::Exchange,
+            started_date: "2021-12-31 17:54:48".to_string(),
+            completed_date: Some("2021-12-31 17:54:48".to_string()),
+            description: "Exchanged from SEK".to_string(),
+            amount: dec!(2000),
+            fee: dec!(0),
+            currency: "DOGE".to_string(),
+            original_amount: dec!(2000),
+            original_currency: "DOGE".to_string(),
+            settled_amount: None,
+            settled_currency: None,
+            state: State::Completed,
+            balance: Some(dec!(2000))
+        }));
+        assert_eq!(iter.next(), None);
+        Ok(())
+    }
+
+    #[test]
+    fn should_parse_to_transactions() -> Result<(), Box<dyn Error>> {
+        /*
+         * Given
+         */
+        let rows = vec![
+            Row{
+                r#type: Type::Exchange,
+                started_date: "2022-03-01 16:21:49".to_string(),
+                completed_date: Some("2022-03-01 16:21:49".to_string()),
+                description: "Exchanged to EOS".to_string(),
+                amount: dec!(-900.90603463),
+                fee: dec!(-20.36495977),
+                currency: "DOGE".to_string(),
+                original_amount: dec!(-900.90603463),
+                original_currency: "DOGE".to_string(),
+                settled_amount: None,
+                settled_currency: None,
+                state: State::Completed,
+                balance: Some(dec!(1078.7290056))
+            },
+            Row{
+                r#type: Type::Exchange,
+                started_date: "2022-03-01 16:21:49".to_string(),
+                completed_date: Some("2022-03-01 16:21:49".to_string()),
+                description: "Exchanged from DOGE".to_string(),
+                amount: dec!(50),
+                fee: dec!(0),
+                currency: "EOS".to_string(),
+                original_amount: dec!(50),
+                original_currency: "EOS".to_string(),
+                settled_amount: None,
+                settled_currency: None,
+                state: State::Completed,
+                balance: Some(dec!(50))
+            },
+            Row{
+                r#type: Type::Exchange,
+                started_date: "2021-12-31 17:54:48".to_string(),
+                completed_date: Some("2021-12-31 17:54:48".to_string()),
+                description: "Exchanged to DOGE".to_string(),
+                amount: dec!(-5000.45),
+                fee: dec!(-80.15),
+                currency: "SEK".to_string(),
+                original_amount: dec!(-5000.45),
+                original_currency: "SEK".to_string(),
+                settled_amount: None,
+                settled_currency: None,
+                state: State::Completed,
+                balance: Some(dec!(700.27))
+            },
+            Row{
+                r#type: Type::Exchange,
+                started_date: "2021-12-31 17:54:48".to_string(),
+                completed_date: Some("2021-12-31 17:54:48".to_string()),
+                description: "Exchanged from SEK".to_string(),
+                amount: dec!(2000),
+                fee: dec!(0),
+                currency: "DOGE".to_string(),
+                original_amount: dec!(2000),
+                original_currency: "DOGE".to_string(),
+                settled_amount: None,
+                settled_currency: None,
+                state: State::Completed,
+                balance: Some(dec!(2000))
+            },
+            Row{
+                r#type: Type::Exchange,
+                started_date: "2021-11-11 18:03:13".to_string(),
+                completed_date: Some("2021-11-11 18:03:13".to_string()),
+                description: "Exchanged to DOGE DOGE Vault".to_string(),
+                amount: dec!(-20),
+                fee: dec!(0),
+                currency: "SEK".to_string(),
+                original_amount: dec!(-20),
+                original_currency: "SEK".to_string(),
+                settled_amount: None,
+                settled_currency: None,
+                state: State::Completed,
+                balance: Some(dec!(500))
+            },
+            Row{
+                r#type: Type::Exchange,
+                started_date: "2021-11-11 18:03:13".to_string(),
+                completed_date: Some("2021-11-11 18:03:13".to_string()),
+                description: "Exchanged from SEK".to_string(),
+                amount: dec!(40),
+                fee: dec!(-0.06),
+                currency: "DOGE".to_string(),
+                original_amount: dec!(40),
+                original_currency: "DOGE".to_string(),
+                settled_amount: None,
+                settled_currency: None,
+                state: State::Completed,
+                balance: Some(dec!(139.94))
+            }
+        ];
+        /*
+         * When
+         */
+        let txns = block_on(to_transactions(&rows, &"DOGE".to_string()))?;
+
+        /*
+        * Then
+        */
+        let mut iter = txns.into_iter();
+        assert_eq!(iter.next(), Some(Transaction{
+            r#type: TransactionType::Buy,
+            paid_currency: "DOGE".to_string(),
+            paid_amount: dec!(39.94),
+            exchanged_currency: "SEK".to_string(),
+            exchanged_amount: dec!(-20),
+            date: "2021-11-11 18:03:13".to_string(),
+            is_vault: true
+        }));
+        assert_eq!(iter.next(), Some(Transaction{
+            r#type: TransactionType::Buy,
+            paid_currency: "DOGE".to_string(),
+            paid_amount: dec!(2000),
+            exchanged_currency: "SEK".to_string(),
+            exchanged_amount: dec!(-5080.60),
+            date: "2021-12-31 17:54:48".to_string(),
+            is_vault: false
+        }));
+        assert_eq!(iter.next(), Some(Transaction{
+            r#type: TransactionType::Sell,
+            paid_currency: "DOGE".to_string(),
+            paid_amount: dec!(-921.27099440),
+            exchanged_currency: "EOS".to_string(),
+            exchanged_amount: dec!(50),
+            date: "2022-03-01 16:21:49".to_string(),
+            is_vault: false
+        }));
+        assert_eq!(iter.next(), None);
+
         Ok(())
     }
 }

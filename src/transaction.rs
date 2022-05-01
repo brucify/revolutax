@@ -1,6 +1,6 @@
 use rust_decimal::Decimal;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct Transaction {
     pub(crate) r#type: TransactionType,
     pub(crate) paid_currency: Currency,
@@ -33,7 +33,7 @@ impl Transaction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum TransactionType {
     Buy,
     Sell
