@@ -10,7 +10,7 @@ use crate::transaction::{Currency, Transaction, TransactionType, Money};
 // 2. Bought Crypto 1 from SEK      (cost in SEK),  sold to Crypto 2 (SEK price as sales)
 // 3. Bought from Crypto 2 (SEK price as cost),     sold to Crypto 3 (SEK price as sales)
 // 4. Bought from Crypto 3 (SEK price as cost),     sold to SEK      (sales in SEK)
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct TaxableTransaction {
     date: String,
     currency: Currency,             // Valutakod
@@ -33,11 +33,15 @@ impl Cost {
     }
 
     fn deduct(&mut self, paid_amount: Decimal) -> Option<Cost> {
-        let exchanged_amount = self.exchanged.amount() / self.paid_amount * paid_amount.abs();
-        let deducted = self.exchanged.deduct(exchanged_amount);
-        self.paid_amount += paid_amount;
-        let deducted_cost = Cost::new(paid_amount.neg(), deducted, self.is_vault);
-        Some(deducted_cost)
+        if self.paid_amount + paid_amount < dec!(0) {
+            None
+        } else {
+            let exchanged_amount = self.exchanged.amount() / self.paid_amount * paid_amount.abs();
+            let deducted = self.exchanged.deduct(exchanged_amount);
+            self.paid_amount += paid_amount;
+            let deducted_cost = Cost::new(paid_amount.neg(), deducted, self.is_vault);
+            Some(deducted_cost)
+        }
     }
 }
 
@@ -194,15 +198,21 @@ pub(crate) async fn tax(txns: &Vec<Transaction>, currency: &Currency, base: &Cur
 
 #[cfg(test)]
 mod test {
-    use crate::calculator::{Cost, CostBook};
-    use crate::transaction::{Money, Transaction, TransactionType};
+    use crate::calculator::{Cost, CostBook, TaxableTransaction};
+    use crate::transaction::{Cash, Coupon, Money, Transaction, TransactionType};
     use rust_decimal_macros::dec;
     use std::error::Error;
 
     #[test]
     fn should_add_buy() -> Result<(), Box<dyn Error>> {
+        /*
+         * Given
+         */
         let mut book = CostBook::new("DOGE".to_string(), "SEK".to_string());
 
+        /*
+         * When
+         */
         let txn = Transaction{
             r#type: TransactionType::Buy,
             paid_currency: "DOGE".to_string(),
@@ -247,6 +257,9 @@ mod test {
         };
         book.add_buy(&txn);
 
+        /*
+         * Then
+         */
         let mut iter = book.costs.iter();
         assert_eq!(iter.next(), Some(&Cost{
             paid_amount: dec!(39.94),
@@ -269,6 +282,115 @@ mod test {
             is_vault: false
         }));
         assert_eq!(iter.next(), None);
+
+        Ok(())
+    }
+
+    #[test]
+    fn should_add_sell() -> Result<(), Box<dyn Error>> {
+        /*
+         * Given
+         */
+        let mut book = CostBook::new("DOGE".to_string(), "SEK".to_string());
+
+        let coupon = Money::new_coupon("EOS".to_string(), dec!(-500), "2021-02-03 10:30:29".to_string());
+        book.costs.push(Cost::new(dec!(200), coupon, false));
+        let coupon = Money::new_coupon("BTC".to_string(), dec!(-0.0000101), "2021-03-04 11:31:30".to_string());
+        book.costs.push(Cost::new(dec!(1000), coupon, false));
+        let cash = Money::new_cash("SEK".to_string(), dec!(-21000));
+        book.costs.push(Cost::new(dec!(10000), cash, false));
+        let cash = Money::new_cash("SEK".to_string(), dec!(-10));
+        book.costs.push(Cost::new(dec!(4.5), cash, true));
+
+        /*
+         * When
+         */
+        let txn = Transaction{
+            r#type: TransactionType::Sell,
+            paid_currency: "DOGE".to_string(),
+            paid_amount: dec!(-50),
+            exchanged_currency: "SEK".to_string(),
+            exchanged_amount: dec!(200.63),
+            date: "2022-05-05 05:01:12".to_string(),
+            is_vault: false
+        };
+        let x = book.add_sell(&txn)?;
+
+        /*
+         * Then
+         */
+        assert_eq!(x, TaxableTransaction{
+            date: "2022-05-05 05:01:12".to_string(),
+            currency: "DOGE".to_string(),
+            amount: dec!(-50),
+            income: Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(200.63) }),
+            costs: vec![Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(-105) })],
+            net_income: None
+        });
+
+        let txn = Transaction{
+            r#type: TransactionType::Sell,
+            paid_currency: "DOGE".to_string(),
+            paid_amount: dec!(-50),
+            exchanged_currency: "BTC".to_string(),
+            exchanged_amount: dec!(0.0000201),
+            date: "2022-07-06 06:02:13".to_string(),
+            is_vault: false
+        };
+        let x = book.add_sell(&txn)?;
+        assert_eq!(x, TaxableTransaction{
+            date: "2022-07-06 06:02:13".to_string(),
+            currency: "DOGE".to_string(),
+            amount: dec!(-50),
+            income: Money::Coupon(Coupon{ currency: "BTC".to_string(), amount: dec!(0.0000201), date: "2022-07-06 06:02:13".to_string() }),
+            costs: vec![Money::Coupon(Coupon{ currency: "BTC".to_string(), amount: dec!(-0.000000505), date: "2021-03-04 11:31:30".to_string() })],
+            net_income: None
+        });
+
+        let txn = Transaction{
+            r#type: TransactionType::Sell,
+            paid_currency: "DOGE".to_string(),
+            paid_amount: dec!(-1250),
+            exchanged_currency: "BCH".to_string(),
+            exchanged_amount: dec!(325),
+            date: "2022-08-07 07:03:14".to_string(),
+            is_vault: false
+        };
+        let x = book.add_sell(&txn)?;
+        assert_eq!(x, TaxableTransaction{
+            date: "2022-08-07 07:03:14".to_string(),
+            currency: "DOGE".to_string(),
+            amount: dec!(-1250),
+            income: Money::Coupon(Coupon{ currency: "BCH".to_string(), amount: dec!(325), date: "2022-08-07 07:03:14".to_string() }),
+            costs: vec![ Money::Coupon(Coupon{ currency: "BTC".to_string(), amount: dec!(-0.000009595), date: "2021-03-04 11:31:30".to_string() })
+                       , Money::Coupon(Coupon{ currency: "EOS".to_string(), amount: dec!(-500), date: "2021-02-03 10:30:29".to_string() })
+                       , Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(-210) })
+                       ],
+            net_income: None
+        });
+
+        Ok(())
+    }
+
+    #[test]
+    fn should_deduct_from_cost() -> Result<(), Box<dyn Error>> {
+        let cash = Money::new_cash("SEK".to_string(), dec!(-16000));
+        let mut cost = Cost::new(dec!(7500), cash, true);
+        let deducted = cost.deduct(dec!(-500));
+        assert_eq!(deducted, Some(Cost{
+            paid_amount: dec!(500),
+            exchanged: Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(-1066.6666666666666666666666666) }),
+            is_vault: true
+        }));
+
+        let coupon = Money::new_coupon("EOS".to_string(), dec!(-500), "2021-02-03 10:30:29".to_string());
+        let mut cost = Cost::new(dec!(200), coupon, false);
+        let deducted = cost.deduct(dec!(-50));
+        assert_eq!(deducted, Some(Cost{
+            paid_amount: dec!(50),
+            exchanged: Money::Coupon(Coupon{ currency: "EOS".to_string(), amount: dec!(-125), date: "2021-02-03 10:30:29".to_string()}),
+            is_vault: false
+        }));
 
         Ok(())
     }
