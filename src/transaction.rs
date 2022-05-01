@@ -1,3 +1,4 @@
+use std::fmt;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 
@@ -39,9 +40,7 @@ pub(crate) enum TransactionType {
     Buy,
     Sell
 }
-
 pub(crate) type Currency = String;
-
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum Money {
@@ -92,6 +91,15 @@ impl Money {
                 Some(cash.amount + cost)
             }
             _ => None
+        }
+    }
+}
+
+impl fmt::Display for Money {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Money::Cash(cash) => write!(f, "{}", cash.amount),
+            Money::Coupon(coupon) => write!(f, "({} {} {})", coupon.amount, coupon.currency, coupon.date)
         }
     }
 }

@@ -1,10 +1,12 @@
+use std::fmt::Debug;
 use std::io;
 use std::ops::{Neg, Sub};
+use csv::WriterBuilder;
 use log::debug;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use crate::transaction::{Currency, Transaction, TransactionType, Money};
-
+use serde::Serialize;
 
 // 1. Bought Crypto 1 from SEK      (cost in SEK),  sold to SEK      (sales in SEK)
 // 2. Bought Crypto 1 from SEK      (cost in SEK),  sold to Crypto 2 (SEK price as sales)
@@ -17,6 +19,49 @@ pub(crate) struct TaxableTransaction {
     amount: Decimal,                // Antal
     income: Money,                  // Försäljningspris
     costs: Vec<Money>,               // Omkostnadsbelopp
+    net_income: Option<Decimal>,    // Vinst/förlust
+}
+
+impl TaxableTransaction {
+    fn to_row(&self) -> OutputRow {
+        OutputRow{
+            date: self.date.clone(),
+            currency: self.currency.clone(),
+            amount: self.amount.clone(),
+            income: format!("{}", self.income),
+            cost: self.costs_to_string().unwrap(),
+            net_income: self.net_income
+        }
+    }
+
+    fn costs_to_string(&self) -> io::Result<String> {
+        if self.costs.iter().all(|c| c.is_cash()) {
+            let s = self.costs.iter()
+                .fold(dec!(0), |acc, c| acc + c.amount())
+                .to_string();
+            Ok(s)
+        } else {
+            self.costs.iter()
+                .map(|c| format!("{}", c))
+                .reduce(|acc, c| format!("{}, {}", acc, c))
+                .ok_or(io::Error::from(io::ErrorKind::InvalidData))
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct OutputRow {
+    #[serde(rename = "Date")]
+    date: String,
+    #[serde(rename = "Currency")]
+    currency: Currency,             // Valutakod
+    #[serde(rename = "Amount")]
+    amount: Decimal,                // Antal
+    #[serde(rename = "Income")]
+    income: String,             // Försäljningspris
+    #[serde(rename = "Cost")]
+    cost: String,                 // Omkostnadsbelopp
+    #[serde(rename = "Net Income")]
     net_income: Option<Decimal>,    // Vinst/förlust
 }
 
@@ -194,6 +239,28 @@ pub(crate) async fn tax(txns: &Vec<Transaction>, currency: &Currency, base: &Cur
     debug!("Taxable transactions:");
     txns.iter().for_each(|t| debug!("{:?}", t));
     Ok(txns)
+}
+
+pub(crate) async fn print_taxables(txns: &Vec<TaxableTransaction>) -> io::Result<()> {
+    let rows: Vec<OutputRow> = txns.iter().map(|t| t.to_row()).collect();
+    let stdout = io::stdout();
+    let lock = stdout.lock();
+    let mut wtr =
+        WriterBuilder::new()
+            .has_headers(true)
+            .delimiter(b';')
+            .from_writer(lock);
+
+    let mut err = None;
+    rows.iter().for_each(|t|
+        wtr.serialize(t)
+            .unwrap_or_else(|e| {
+                err = Some(e);
+                Default::default()
+            })
+    );
+    err.map_or(Ok(()), Err)?;
+    Ok(())
 }
 
 

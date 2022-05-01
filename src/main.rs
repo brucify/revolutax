@@ -11,7 +11,7 @@ struct Cli {
     #[clap(short, long, help = "Give 'ALL' for all currencies.")]
     currency: Option<String>,
 
-    #[clap(short, long, help = "Print to stdout a new csv file with transactions with type 'Exchange'")]
+    #[clap(short, long, help = "Print to stdout a new csv file with transactions with type 'Exchange' only")]
     exchanges: bool,
 
 }
