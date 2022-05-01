@@ -20,7 +20,7 @@ pub(crate) struct TaxableTransaction {
     net_income: Option<Decimal>,    // Vinst/förlust
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct Cost {
     paid_amount: Decimal,
     exchanged: Money,
@@ -92,7 +92,7 @@ impl CostBook {
     }
 
     fn find_cash_cost_mut(&mut self, is_vault: bool) -> Option<&mut Cost> {
-        match self.costs.iter().find(|c| c.exchanged.is_cash()) {
+        match self.costs.iter().find(|c| c.exchanged.is_cash() && c.is_vault == is_vault) {
             None => {
                 let cash = Money::new_cash(self.base.clone(), Default::default());
                 let cash_cost = Cost::new(Default::default(), cash, is_vault);
@@ -100,7 +100,7 @@ impl CostBook {
                 self.costs.last_mut()
             }
             Some(_) => {
-                self.costs.iter_mut().find(|c| c.exchanged.is_cash())
+                self.costs.iter_mut().find(|c| c.exchanged.is_cash() && c.is_vault == is_vault)
             }
         }
     }
@@ -189,4 +189,87 @@ pub(crate) async fn tax(txns: &Vec<Transaction>, currency: &Currency, base: &Cur
     debug!("Taxable transactions:");
     txns.iter().for_each(|t| debug!("{:?}", t));
     Ok(txns)
+}
+
+
+#[cfg(test)]
+mod test {
+    use crate::calculator::{Cost, CostBook};
+    use crate::transaction::{Money, Transaction, TransactionType};
+    use rust_decimal_macros::dec;
+    use std::error::Error;
+
+    #[test]
+    fn should_add_buy() -> Result<(), Box<dyn Error>> {
+        let mut book = CostBook::new("DOGE".to_string(), "SEK".to_string());
+
+        let txn = Transaction{
+            r#type: TransactionType::Buy,
+            paid_currency: "DOGE".to_string(),
+            paid_amount: dec!(39.94),
+            exchanged_currency: "SEK".to_string(),
+            exchanged_amount: dec!(-20),
+            date: "2021-11-11 18:03:13".to_string(),
+            is_vault: true
+        };
+        book.add_buy(&txn);
+
+        let txn = Transaction{
+            r#type: TransactionType::Buy,
+            paid_currency: "DOGE".to_string(),
+            paid_amount: dec!(2000),
+            exchanged_currency: "SEK".to_string(),
+            exchanged_amount: dec!(-5080.60),
+            date: "2021-12-31 17:54:48".to_string(),
+            is_vault: false
+        };
+        book.add_buy(&txn);
+
+        let txn = Transaction{
+            r#type: TransactionType::Buy,
+            paid_currency: "DOGE".to_string(),
+            paid_amount: dec!(200),
+            exchanged_currency: "EOS".to_string(),
+            exchanged_amount: dec!(-500),
+            date: "2022-02-03 10:30:29".to_string(),
+            is_vault: false
+        };
+        book.add_buy(&txn);
+
+        let txn = Transaction{
+            r#type: TransactionType::Buy,
+            paid_currency: "DOGE".to_string(),
+            paid_amount: dec!(30.3),
+            exchanged_currency: "EOS".to_string(),
+            exchanged_amount: dec!(-62.35),
+            date: "2022-02-04 11:01:35".to_string(),
+            is_vault: false
+        };
+        book.add_buy(&txn);
+
+        let mut iter = book.costs.iter();
+        assert_eq!(iter.next(), Some(&Cost{
+            paid_amount: dec!(39.94),
+            exchanged: Money::new_cash("SEK".to_string(), dec!(-20)),
+            is_vault: true
+        }));
+        assert_eq!(iter.next(), Some(&Cost{
+            paid_amount: dec!(2000),
+            exchanged: Money::new_cash("SEK".to_string(), dec!(-5080.6)),
+            is_vault: false
+        }));
+        assert_eq!(iter.next(), Some(&Cost{
+            paid_amount: dec!(200),
+            exchanged: Money::new_coupon("EOS".to_string(), dec!(-500), "2022-02-03 10:30:29".to_string()),
+            is_vault: false
+        }));
+        assert_eq!(iter.next(), Some(&Cost{
+            paid_amount: dec!(30.3),
+            exchanged: Money::new_coupon("EOS".to_string(), dec!(-62.35), "2022-02-04 11:01:35".to_string()),
+            is_vault: false
+        }));
+        assert_eq!(iter.next(), None);
+
+        Ok(())
+    }
 }

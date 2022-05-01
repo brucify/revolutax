@@ -42,7 +42,7 @@ pub(crate) enum TransactionType {
 pub(crate) type Currency = String;
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) enum Money {
     Cash(Cash),
     Coupon(Coupon),
@@ -84,13 +84,13 @@ impl Money {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct Cash {
     pub(crate) currency: Currency,
     pub(crate) amount: Decimal
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct Coupon {
     pub(crate) currency: Currency,
     pub(crate) amount: Decimal,
