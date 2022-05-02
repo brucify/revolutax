@@ -1,7 +1,7 @@
 cryptotax
 =====
 
-A Rust CLI application. Search for currency exchanges in a Revolut CSV file and output a new csv containing the tax
+A Rust CLI application. Searches for currency exchanges in a Revolut CSV file and outputs a new csv containing the tax
 information.
 
 ```shell
@@ -13,10 +13,13 @@ USAGE:
     cryptotax [OPTIONS] <PATH>
 
 ARGS:
-    <PATH>    Path to the csv file that contains transactions.
+    <PATH>    Path to the Revolut transactions_history.csv file that contains transactions.
 
 OPTIONS:
-    -c, --currency <CURRENCY>    Give 'ALL' for all currencies.
+    -b, --base <BASE>            Base currency. The currency in which you report the tax. Default:
+                                 'SEK'
+    -c, --currency <CURRENCY>    The traded currency for which you report the tax. 'ALL' for all
+                                 currencies when --exchanges is used
     -e, --exchanges              Print to stdout a new csv file with transactions with type
                                  'Exchange' only
     -h, --help                   Print help information
@@ -31,7 +34,7 @@ Build
 Run
 -----
 
-    $ cargo run -- transactions_history.csv --currency ETH > tax_eth.csv
+    $ cargo run -- transactions_history.csv --currency ETH --base SEK > tax_eth.csv
     $ cargo run -- transactions_history.csv --currency ETH --exchanges > eth_exchanges.csv
 
 Or

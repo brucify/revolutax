@@ -4,6 +4,7 @@ use log::{debug};
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::io::{self};
+use std::ops::Neg;
 use std::path::PathBuf;
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
@@ -95,7 +96,10 @@ pub(crate) async fn read_exchanges(path: &PathBuf) -> io::Result<Vec<Row>> {
 pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Currency) -> io::Result<Vec<Row>> {
     let txns = deserialize_from_path(path).await?
         .into_iter()
-        .filter(|t| t.r#type == Type::Exchange)
+        .filter(|t| {
+            t.r#type == Type::Exchange
+            || (t.r#type == Type::CardPayment && t.currency.eq(currency))
+        })
         .filter(|t| t.currency.eq(currency) || t.description.contains(currency))// "Exchanged to ETH"
         .collect();
     Ok(txns)
@@ -105,14 +109,24 @@ pub(crate) async fn to_transactions(rows: &Vec<Row>, currency: &Currency) -> io:
     let (txns, _): (Vec<Transaction>, Option<&Row>) =
         rows.iter().rev()
             .fold((vec![], None), |(mut acc, prev), row| {
-                match prev {
-                    None => (acc, Some(row)),
-                    Some(prev) => {
-                        let txn = prev.to_transaction(None, currency);
-                        let txn = row.to_transaction(Some(txn), currency);
-                        acc.push(txn);
-                        (acc, None)
+                match row.r#type {
+                    Type::Exchange => {
+                        match prev {
+                            None => (acc, Some(row)),
+                            Some(prev) => {
+                                let txn = prev.to_transaction(None, currency);
+                                let txn = row.to_transaction(Some(txn), currency);
+                                acc.push(txn);
+                                (acc, None)
+                            }
+                        }
                     }
+                    Type::CardPayment => {
+                        let txn = row.to_transaction(None, currency);
+                        acc.push(txn);
+                        (acc, prev)
+                    }
+                    _ => (acc, prev)
                 }
             });
     Ok(txns)
@@ -126,6 +140,16 @@ impl Row {
     fn to_transaction(&self, txn: Option<Transaction>, currency: &Currency) -> Transaction {
         let mut txn = txn.unwrap_or(Transaction::new());
 
+        match self.r#type {
+            Type::Exchange => self.exchange_to_transaction(&mut txn, currency),
+            Type::CardPayment => self.card_payment_to_transaction(&mut txn, currency),
+            _ => {}
+        }
+
+        txn
+    }
+
+    fn exchange_to_transaction(&self, txn: &mut Transaction, currency: &Currency) {
         // target currency: "BCH", currency: "BCH", description: "Exchanged from SEK"
         if self.currency.eq(currency) && self.description.contains("Exchanged from") {
             debug!("{:?}: Bought {:?} of {:?} ({:?}), incl. fee {:?}", self.started_date, self.amount+self.fee, self.currency, self.description, self.fee);
@@ -159,7 +183,19 @@ impl Row {
         if self.description.contains("Vault") {
             txn.is_vault = true;
         }
-        txn
+    }
+
+    fn card_payment_to_transaction(&self, txn: &mut Transaction, currency: &Currency) {
+        // amount: -0.00123456, fee: 0.00000000, currency: "BTC", original_amount: -543.21, original_currency: "SEK",
+        // settled_amount: Some(543.21), settled_currency: Some("SEK"), state: Completed, balance: Some(0.00000000) }
+        debug!("card_payment_to_transaction: {:?}", self);
+        txn.r#type = TransactionType::Sell;
+        txn.paid_amount = self.amount + self.fee;
+        txn.paid_currency = currency.clone();
+        txn.exchanged_amount = self.original_amount.neg();
+        txn.exchanged_currency = self.original_currency.clone();
+        txn.date = self.started_date.clone();
+        txn.is_vault = false;
     }
 }
 
@@ -289,6 +325,21 @@ mod test {
          */
         let rows = vec![
             Row{
+                r#type: Type::CardPayment,
+                started_date: "2022-04-02 17:22:50".to_string(),
+                completed_date: Some("2022-04-02 17:22:50".to_string()),
+                description: "Klarna".to_string(),
+                amount: dec!(-123.45678901),
+                fee: dec!(0.00000000),
+                currency: "DOGE".to_string(),
+                original_amount: dec!(-321.23456789),
+                original_currency: "SEK".to_string(),
+                settled_amount: Some(dec!(321.23456789)),
+                settled_currency: Some("SEK".to_string()),
+                state: State::Completed,
+                balance: Some(dec!(9876.123345))
+            },
+            Row{
                 r#type: Type::Exchange,
                 started_date: "2022-03-01 16:21:49".to_string(),
                 completed_date: Some("2022-03-01 16:21:49".to_string()),
@@ -413,6 +464,15 @@ mod test {
             exchanged_currency: "EOS".to_string(),
             exchanged_amount: dec!(50),
             date: "2022-03-01 16:21:49".to_string(),
+            is_vault: false
+        }));
+        assert_eq!(iter.next(), Some(Transaction{
+            r#type: TransactionType::Sell,
+            paid_currency: "DOGE".to_string(),
+            paid_amount: dec!(-123.45678901),
+            exchanged_currency: "SEK".to_string(),
+            exchanged_amount: dec!(321.23456789),
+            date: "2022-04-02 17:22:50".to_string(),
             is_vault: false
         }));
         assert_eq!(iter.next(), None);

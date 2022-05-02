@@ -5,11 +5,14 @@ use clap::Parser;
 /// Search for currency exchanges in a Revolut csv file and output a new csv containing the tax information.
 #[derive(Parser)]
 struct Cli {
-    #[clap(parse(from_os_str), help = "Path to the csv file that contains transactions.")]
+    #[clap(parse(from_os_str), help = "Path to the Revolut transactions_history.csv file that contains transactions.")]
     path: std::path::PathBuf,
 
-    #[clap(short, long, help = "Give 'ALL' for all currencies.")]
+    #[clap(short, long, help = "The traded currency for which you report the tax. 'ALL' for all currencies when --exchanges is used")]
     currency: Option<String>,
+
+    #[clap(short, long, help = "Base currency. The currency in which you report the tax. Default: 'SEK'")]
+    base: Option<String>,
 
     #[clap(short, long, help = "Print to stdout a new csv file with transactions with type 'Exchange' only")]
     exchanges: bool,
@@ -20,6 +23,7 @@ fn main() {
     env_logger::init();
     let args = Cli::parse();
     let currency: String = args.currency.unwrap_or("ALL".to_string());
+    let base: String = args.base.unwrap_or("SEK".to_string());
 
     if args.exchanges {
         match currency.as_str() {
@@ -31,7 +35,7 @@ fn main() {
                 .unwrap(),
         }
     } else {
-        cryptotax::calculate_tax(&args.path, &currency)
+        cryptotax::calculate_tax(&args.path, &currency, &base)
             .with_context(|| format!("Could not calculate tax from file `{:?}`", &args.path))
             .unwrap();
     }

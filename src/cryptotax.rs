@@ -38,7 +38,7 @@ pub fn print_exchanges_in_currency(path: &PathBuf, currency: &String) -> io::Res
 
 /// Reads the transactions from the path and prints the results to
 /// `std::io::stdout()`.
-pub fn calculate_tax(path: &PathBuf, currency: &String) -> io::Result<()> {
+pub fn calculate_tax(path: &PathBuf, currency: &String, base: &String) -> io::Result<()> {
     let now = std::time::Instant::now();
     let rows = block_on(reader::read_exchanges_in_currency(path, currency))?;
     debug!("reader::read_exchanges_in_currency done. Elapsed: {:.2?}", now.elapsed());
@@ -52,7 +52,7 @@ pub fn calculate_tax(path: &PathBuf, currency: &String) -> io::Result<()> {
     // txns.iter().for_each(|t| debug!("{:?}", t));
 
     let now = std::time::Instant::now();
-    let txns =  block_on(calculator::tax(&txns, currency, &"SEK".to_string()))?;
+    let txns =  block_on(calculator::tax(&txns, currency, base))?;
     debug!("calculator::tax done. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();

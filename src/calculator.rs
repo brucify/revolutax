@@ -393,7 +393,7 @@ mod test {
             amount: dec!(-50),
             income: Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(200.63) }),
             costs: vec![Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(-105) })],
-            net_income: None
+            net_income: Some(dec!(95.63))
         });
 
         let txn = Transaction{
