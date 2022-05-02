@@ -1,6 +1,6 @@
 use crate::transaction::{Currency, Transaction, TransactionType};
-use csv::{ReaderBuilder, Trim, WriterBuilder};
-use log::{debug};
+use csv::{ReaderBuilder, Trim};
+use log::{debug, info};
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::io::{self};
@@ -54,18 +54,8 @@ enum State {
     Completed
 }
 
-#[derive(Debug, Serialize, PartialEq)]
-struct Account {
-    #[serde(rename = "client")]
-    client_id:  u16,
-    available:  Decimal,
-    held:       Decimal,
-    total:      Decimal,
-    locked:     bool,
-}
-
-/// Reads the file from path into an ordered `Vec<Transaction>`.
-async fn deserialize_from_path(path: &PathBuf) -> io::Result<Vec<Row>> {
+/// Reads the file from path into a `Vec<Row>`.
+async fn deserialize_from(path: &PathBuf) -> io::Result<Vec<Row>> {
     let now = std::time::Instant::now();
     let mut rdr = ReaderBuilder::new()
         .has_headers(true)
@@ -73,28 +63,31 @@ async fn deserialize_from_path(path: &PathBuf) -> io::Result<Vec<Row>> {
         .delimiter(b',')
         .trim(Trim::All)
         .from_path(path)?;
-    debug!("ReaderBuilder::from_path done. Elapsed: {:.2?}", now.elapsed());
+    info!("ReaderBuilder::from_path done. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
     let txns: Vec<Row> =
         rdr.deserialize::<Row>()
             .filter_map(|record| record.ok())
             .collect();
-    debug!("reader::deserialize done. Elapsed: {:.2?}", now.elapsed());
+    info!("reader::deserialize done. Elapsed: {:.2?}", now.elapsed());
 
     Ok(txns)
 }
 
+/// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange`.
 pub(crate) async fn read_exchanges(path: &PathBuf) -> io::Result<Vec<Row>> {
-    let txns = deserialize_from_path(path).await?
+    let txns = deserialize_from(path).await?
         .into_iter()
         .filter(|t| t.r#type == Type::Exchange)
         .collect();
     Ok(txns)
 }
 
+/// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange` in the
+/// target currency, or  with type `Card Payment` but in the target currency.
 pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Currency) -> io::Result<Vec<Row>> {
-    let txns = deserialize_from_path(path).await?
+    let txns = deserialize_from(path).await?
         .into_iter()
         .filter(|t| {
             t.r#type == Type::Exchange
@@ -105,6 +98,7 @@ pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Curren
     Ok(txns)
 }
 
+/// Converts `Vec<Row>` into `Vec<Transaction>`, given a target currency.
 pub(crate) async fn to_transactions(rows: &Vec<Row>, currency: &Currency) -> io::Result<Vec<Transaction>> {
     let (txns, _): (Vec<Transaction>, Option<&Row>) =
         rows.iter().rev()
@@ -188,7 +182,6 @@ impl Row {
     fn card_payment_to_transaction(&self, txn: &mut Transaction, currency: &Currency) {
         // amount: -0.00123456, fee: 0.00000000, currency: "BTC", original_amount: -543.21, original_currency: "SEK",
         // settled_amount: Some(543.21), settled_currency: Some("SEK"), state: Completed, balance: Some(0.00000000) }
-        debug!("card_payment_to_transaction: {:?}", self);
         txn.r#type = TransactionType::Sell;
         txn.paid_amount = self.amount + self.fee;
         txn.paid_currency = currency.clone();
@@ -197,29 +190,6 @@ impl Row {
         txn.date = self.started_date.clone();
         txn.is_vault = false;
     }
-}
-
-/// Wraps the `stdout.lock()` in a `csv::Writer` and writes the accounts.
-/// The `csv::Writer` is already buffered so there is no need to wrap
-/// `stdout.lock()` in a `io::BufWriter`.
-pub(crate) async fn print_rows(txns: &Vec<Row>) -> io::Result<()>{
-    let stdout = io::stdout();
-    let lock = stdout.lock();
-    let mut wtr =
-        WriterBuilder::new()
-            .has_headers(true)
-            .from_writer(lock);
-
-    let mut err = None;
-    txns.iter().for_each(|t|
-        wtr.serialize(t)
-            .unwrap_or_else(|e| {
-                err = Some(e);
-                Default::default()
-            })
-    );
-    err.map_or(Ok(()), Err)?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -248,7 +218,7 @@ mod test {
         /*
          * When
          */
-        let rows = block_on(deserialize_from_path(&PathBuf::from(path)))?;
+        let rows = block_on(deserialize_from(&PathBuf::from(path)))?;
 
         /*
          * Then

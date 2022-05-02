@@ -1,12 +1,11 @@
-use std::fmt::Debug;
-use std::io;
-use std::ops::{Neg, Sub};
-use csv::WriterBuilder;
+use crate::transaction::{Currency, Transaction, TransactionType, Money};
+use crate::writer::Row;
 use log::debug;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use crate::transaction::{Currency, Transaction, TransactionType, Money};
-use serde::Serialize;
+use std::fmt::Debug;
+use std::io;
+use std::ops::{Neg, Sub};
 
 // 1. Bought Crypto 1 from SEK      (cost in SEK),  sold to SEK      (sales in SEK)
 // 2. Bought Crypto 1 from SEK      (cost in SEK),  sold to Crypto 2 (SEK price as sales)
@@ -23,15 +22,15 @@ pub(crate) struct TaxableTransaction {
 }
 
 impl TaxableTransaction {
-    fn to_row(&self) -> OutputRow {
-        OutputRow{
-            date: self.date.clone(),
-            currency: self.currency.clone(),
-            amount: self.amount.clone(),
-            income: format!("{}", self.income),
-            cost: self.costs_to_string().unwrap(),
-            net_income: self.net_income
-        }
+    pub(crate) fn to_row(&self) -> Row {
+        Row::new(
+            self.date.clone(),
+            self.currency.clone(),
+            self.amount.clone(),
+            format!("{}", self.income),
+            self.costs_to_string().unwrap(),
+            self.net_income
+        )
     }
 
     fn costs_to_string(&self) -> io::Result<String> {
@@ -47,22 +46,6 @@ impl TaxableTransaction {
                 .ok_or(io::Error::from(io::ErrorKind::InvalidData))
         }
     }
-}
-
-#[derive(Debug, Serialize)]
-pub(crate) struct OutputRow {
-    #[serde(rename = "Date")]
-    date: String,
-    #[serde(rename = "Currency")]
-    currency: Currency,             // Valutakod
-    #[serde(rename = "Amount")]
-    amount: Decimal,                // Antal
-    #[serde(rename = "Income")]
-    income: String,             // Försäljningspris
-    #[serde(rename = "Cost")]
-    cost: String,                 // Omkostnadsbelopp
-    #[serde(rename = "Net Income")]
-    net_income: Option<Decimal>,    // Vinst/förlust
 }
 
 #[derive(Debug, PartialEq)]
@@ -240,29 +223,6 @@ pub(crate) async fn tax(txns: &Vec<Transaction>, currency: &Currency, base: &Cur
     txns.iter().for_each(|t| debug!("{:?}", t));
     Ok(txns)
 }
-
-pub(crate) async fn print_taxables(txns: &Vec<TaxableTransaction>) -> io::Result<()> {
-    let rows: Vec<OutputRow> = txns.iter().map(|t| t.to_row()).collect();
-    let stdout = io::stdout();
-    let lock = stdout.lock();
-    let mut wtr =
-        WriterBuilder::new()
-            .has_headers(true)
-            .delimiter(b';')
-            .from_writer(lock);
-
-    let mut err = None;
-    rows.iter().for_each(|t|
-        wtr.serialize(t)
-            .unwrap_or_else(|e| {
-                err = Some(e);
-                Default::default()
-            })
-    );
-    err.map_or(Ok(()), Err)?;
-    Ok(())
-}
-
 
 #[cfg(test)]
 mod test {
