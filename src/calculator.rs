@@ -1,8 +1,9 @@
 use crate::transaction::{Currency, Transaction, TransactionType, Money};
-use crate::writer::Row;
 use log::debug;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde::ser::SerializeStruct;
+use serde::{Serialize, Serializer};
 use std::fmt::Debug;
 use std::io;
 use std::ops::{Neg, Sub};
@@ -17,33 +18,35 @@ pub(crate) struct TaxableTransaction {
     currency: Currency,             // Valutakod
     amount: Decimal,                // Antal
     income: Money,                  // Försäljningspris
-    costs: Vec<Money>,               // Omkostnadsbelopp
+    costs: Vec<Money>,              // Omkostnadsbelopp
     net_income: Option<Decimal>,    // Vinst/förlust
 }
 
-impl TaxableTransaction {
-    pub(crate) fn to_row(&self) -> Row {
-        Row::new(
-            self.date.clone(),
-            self.currency.clone(),
-            self.amount.clone(),
-            format!("{}", self.income),
-            self.costs_to_string().unwrap(),
-            self.net_income
-        )
+impl Serialize for TaxableTransaction {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: Serializer,
+    {
+        // 6 is the number of fields in the struct.
+        let mut state = serializer.serialize_struct("TaxableTransaction", 6)?;
+        state.serialize_field("Date", &self.date)?;
+        state.serialize_field("Currency", &self.currency)?;
+        state.serialize_field("Amount", &self.amount)?;
+        state.serialize_field("Income", &format!("{}", self.income))?;
+        state.serialize_field("Cost", &self.costs_to_string())?;
+        state.serialize_field("Net Income", &self.net_income)?;
+        state.end()
     }
+}
 
-    fn costs_to_string(&self) -> io::Result<String> {
+impl TaxableTransaction {
+    fn costs_to_string(&self) -> String {
         if self.costs.iter().all(|c| c.is_cash()) {
-            let s = self.costs.iter()
+            self.costs.iter()
                 .fold(dec!(0), |acc, c| acc + c.amount())
-                .to_string();
-            Ok(s)
+                .to_string()
         } else {
             self.costs.iter()
-                .map(|c| format!("{}", c))
-                .reduce(|acc, c| format!("{}, {}", acc, c))
-                .ok_or(io::Error::from(io::ErrorKind::InvalidData))
+                .fold("".to_string(), |acc, c| format!("{}, {}", acc, c))
         }
     }
 }

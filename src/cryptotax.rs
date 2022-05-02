@@ -56,7 +56,7 @@ pub fn calculate_tax(path: &PathBuf, currency: &String, base: &String) -> io::Re
     info!("calculator::tax done. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    block_on(writer::print_taxables(&txns))?;
+    block_on(writer::print(&txns))?;
     info!("calculator::print_taxables done. Elapsed: {:.2?}", now.elapsed());
 
     Ok(())

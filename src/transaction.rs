@@ -1,6 +1,6 @@
-use std::fmt;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::fmt;
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct Transaction {
