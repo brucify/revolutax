@@ -71,6 +71,13 @@ impl Cost {
             Some(deducted_cost)
         }
     }
+
+    fn add_cash(&mut self, paid_amount: Decimal, amount: Decimal) {
+        if let Money::Cash(cash) = &mut self.exchanged {
+            cash.amount += amount;
+            self.paid_amount += paid_amount;
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -91,13 +98,10 @@ impl CostBook {
 
     fn add_buy(&mut self, transaction: &Transaction) {
         match transaction.to_money(&self.base) {
-            Money::Cash(income) => {
-                self.find_cash_cost_mut(transaction.is_vault).map(|cost| {
-                    if let Money::Cash(cash) = &mut cost.exchanged {
-                        cash.amount += income.amount;
-                        cost.paid_amount += transaction.paid_amount;
-                    }
-                });
+            Money::Cash(cash) => {
+                self.find_cash_cost_mut(transaction.is_vault).map(|cost|
+                    cost.add_cash(transaction.paid_amount, cash.amount)
+                );
             }
             income @ Money::Coupon(_) => {
                 let coupon_cost = Cost::new(transaction.paid_amount, income, transaction.is_vault);
