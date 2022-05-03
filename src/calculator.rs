@@ -81,6 +81,34 @@ impl Cost {
             self.paid_amount += paid_amount;
         }
     }
+
+    fn deduct_coupon_cost(&mut self, paid_amount: Decimal) -> Option<Cost> {
+        match (&self.exchanged, self.is_vault) {
+            (Money::Coupon(_), false) => self.deduct(paid_amount),
+            _ => None,
+        }
+    }
+
+    fn deduct_cash_cost(&mut self, paid_amount: Decimal) -> Option<Cost> {
+        match (&self.exchanged, self.is_vault) {
+            (Money::Cash(_), false) => self.deduct(paid_amount),
+            _ => None,
+        }
+    }
+
+    fn deduct_vault_coupon_cost(&mut self, paid_amount: Decimal) -> Option<Cost> {
+        match (&self.exchanged, self.is_vault) {
+            (Money::Coupon(_), true) => self.deduct(paid_amount),
+            _ => None,
+        }
+    }
+
+    fn deduct_vault_cash_cost(&mut self, paid_amount: Decimal) -> Option<Cost> {
+        match (&self.exchanged, self.is_vault) {
+            (Money::Cash(_), true) => self.deduct(paid_amount),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -145,7 +173,14 @@ impl CostBook {
         }
     }
 
+    /// If `income` is `Money::Cash`, try deduct from the cash in the `CostBook`.
+    /// Likewise, if `income` is `Money::Coupon`, try deduct from the coupons in the `CostBook`.
+    /// Only start deducting from the vault if there are no non-vault costs to deduct.
     fn find_and_deduct_cost(&mut self, income: &Money, paid_amount: Decimal) -> io::Result<Vec<Cost>> {
+        let deduct_coupon_cost = |cost: &mut Cost, paid_amount: Decimal| cost.deduct_coupon_cost(paid_amount);
+        let deduct_cash_cost= |cost: &mut Cost, paid_amount: Decimal| cost.deduct_cash_cost(paid_amount);
+        let deduct_vault_coupon_cost = |cost: &mut Cost, paid_amount: Decimal| cost.deduct_vault_coupon_cost(paid_amount);
+        let deduct_vault_cash_cost = |cost: &mut Cost, paid_amount: Decimal| cost.deduct_vault_cash_cost(paid_amount);
         match income {
             Money::Cash(_) => self.do_find_and_deduct_cost(
                 paid_amount,
@@ -183,33 +218,6 @@ impl CostBook {
 }
 
 
-fn deduct_coupon_cost(cost: &mut Cost, paid_amount: Decimal) -> Option<Cost> {
-    match (&cost.exchanged, cost.is_vault) {
-        (Money::Coupon(_), false) => cost.deduct(paid_amount),
-        _ => None,
-    }
-}
-
-fn deduct_cash_cost(cost: &mut Cost, paid_amount: Decimal) -> Option<Cost> {
-    match (&cost.exchanged, cost.is_vault) {
-        (Money::Cash(_), false) => cost.deduct(paid_amount),
-        _ => None,
-    }
-}
-
-fn deduct_vault_coupon_cost(cost: &mut Cost, paid_amount: Decimal) -> Option<Cost> {
-    match (&cost.exchanged, cost.is_vault) {
-        (Money::Coupon(_), true) => cost.deduct(paid_amount),
-        _ => None,
-    }
-}
-
-fn deduct_vault_cash_cost(cost: &mut Cost, paid_amount: Decimal) -> Option<Cost> {
-    match (&cost.exchanged, cost.is_vault) {
-        (Money::Cash(_), true) => cost.deduct(paid_amount),
-        _ => None,
-    }
-}
 
 pub(crate) async fn tax(txns: &Vec<Transaction>, currency: &Currency, base: &Currency) -> io::Result<Vec<TaxableTransaction>> {
     let book = CostBook::new(currency.clone(), base.clone());
