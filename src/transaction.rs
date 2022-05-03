@@ -1,15 +1,29 @@
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use serde::Serialize;
 use std::fmt;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize)]
 pub(crate) struct Transaction {
+    #[serde(rename = "Type")]
     pub(crate) r#type: TransactionType,
+
+    #[serde(rename = "Paid Currency")]
     pub(crate) paid_currency: Currency,
+
+    #[serde(rename = "Paid Amount")]
     pub(crate) paid_amount: Decimal,
+
+    #[serde(rename = "Exchanged Currency")]
     pub(crate) exchanged_currency: Currency,
+
+    #[serde(rename = "Exchanged Amount")]
     pub(crate) exchanged_amount: Decimal,
+
+    #[serde(rename = "Date")]
     pub(crate) date: String,
+
+    #[serde(rename = "Vault")]
     pub(crate) is_vault: bool,
 }
 
@@ -35,11 +49,12 @@ impl Transaction {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize)]
 pub(crate) enum TransactionType {
     Buy,
     Sell
 }
+
 pub(crate) type Currency = String;
 
 #[derive(Debug, PartialEq)]

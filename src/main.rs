@@ -14,8 +14,11 @@ struct Cli {
     #[clap(short, long, help = "Base currency. The currency in which you report the tax. Default: 'SEK'")]
     base: Option<String>,
 
-    #[clap(short, long, help = "Print to stdout a new csv file with transactions with type 'Exchange' only")]
+    #[clap(short, long, help = "Filter the input csv file. Print to stdout a new csv file with items with type 'Exchange' only")]
     exchanges: bool,
+
+    #[clap(short, long, help = "Merge both sides of a currency 'Exchange' into a single line. Print to stdout a new csv file")]
+    transactions: bool,
 
 }
 
@@ -34,6 +37,10 @@ fn main() {
                 .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
                 .unwrap(),
         }
+    } else if args.transactions {
+        cryptotax::merge_exchanges(&args.path, &currency)
+            .with_context(|| format!("Could not merge exchanges from file `{:?}`", &args.path))
+            .unwrap();
     } else {
         cryptotax::calculate_tax(&args.path, &currency, &base)
             .with_context(|| format!("Could not calculate tax from file `{:?}`", &args.path))

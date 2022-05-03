@@ -11,28 +11,40 @@ use std::path::PathBuf;
 pub(crate) struct Row {
     #[serde(rename = "Type")]
     r#type: Type,
+
     #[serde(rename = "Started Date")]
     started_date: String,
+
     #[serde(rename = "Completed Date")]
     completed_date: Option<String>,
+
     #[serde(rename = "Description")]
     description: String,
+
     #[serde(rename = "Amount")]
     amount: Decimal,
+
     #[serde(rename = "Fee")]
     fee: Decimal,
+
     #[serde(rename = "Currency")]
     currency: Currency,
+
     #[serde(rename = "Original Amount")]
     original_amount: Decimal,
+
     #[serde(rename = "Original Currency")]
     original_currency: Currency,
+
     #[serde(rename = "Settled Amount")]
     settled_amount: Option<Decimal>,
+
     #[serde(rename = "Settled Currency")]
     settled_currency: Option<Currency>,
+
     #[serde(rename = "State")]
     state: State,
+
     #[serde(rename = "Balance")]
     balance: Option<Decimal>,
 }
@@ -43,9 +55,10 @@ enum Type {
     Exchange,
     Transfer,
     Cashback,
+    Topup,
+
     #[serde(rename = "Card Payment")]
     CardPayment,
-    Topup,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
