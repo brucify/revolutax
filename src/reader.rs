@@ -157,16 +157,23 @@ impl Row {
     }
 
     fn exchange_to_transaction(&self, txn: &mut Transaction, currency: &Currency) {
+        if self.started_date.contains("2021-11-17 15:26:31") {
+            debug!("hello: {:?}", self);
+        }
+
         // target currency: "BCH", currency: "BCH", description: "Exchanged from SEK"
-        if self.currency.eq(currency) && self.description.contains("Exchanged from") {
+        // if self.currency.eq(currency) && self.description.contains("Exchanged from") {
+        if self.currency.eq(currency) && self.amount.is_sign_positive() {
             debug!("{:?}: Bought {:?} of {:?} ({:?}), incl. fee {:?}", self.started_date, self.amount+self.fee, self.currency, self.description, self.fee);
             txn.r#type = TransactionType::Buy;
             txn.paid_amount = self.amount + self.fee;
             txn.paid_currency = currency.clone();
             txn.date = self.started_date.clone();
+
         }
         // target currency: "BCH", currency: "BCH", description: "Exchanged to SEK"
-        if self.currency.eq(currency) && self.description.contains("Exchanged to") {
+        // if self.currency.eq(currency) && self.description.contains("Exchanged to") {
+        if self.currency.eq(currency) && self.amount.is_sign_negative() {
             debug!("{:?}: Sold {:?} of {:?} ({:?}), incl. fee {:?}", self.started_date, self.amount+self.fee, self.currency, self.description, self.fee);
             txn.r#type = TransactionType::Sell;
             txn.paid_amount = self.amount + self.fee;
@@ -411,6 +418,36 @@ mod test {
                 settled_currency: None,
                 state: State::Completed,
                 balance: Some(dec!(139.94))
+            },
+            Row{
+                r#type: Type::Exchange,
+                started_date: "2021-11-10 17:03:13".to_string(),
+                completed_date: Some("2021-11-10 17:03:13".to_string()),
+                description: "Exchanged to DOGE DOGE Vault".to_string(),
+                amount: dec!(-300),
+                fee: dec!(0),
+                currency: "SEK".to_string(),
+                original_amount: dec!(-300),
+                original_currency: "SEK".to_string(),
+                settled_amount: None,
+                settled_currency: None,
+                state: State::Completed,
+                balance: Some(dec!(0))
+            },
+            Row{
+                r#type: Type::Exchange,
+                started_date: "2021-11-10 17:03:13".to_string(),
+                completed_date: Some("2021-11-10 17:03:13".to_string()),
+                description: "".to_string(),
+                amount: dec!(3),
+                fee: dec!(-0.06),
+                currency: "DOGE".to_string(),
+                original_amount: dec!(3),
+                original_currency: "DOGE".to_string(),
+                settled_amount: None,
+                settled_currency: None,
+                state: State::Completed,
+                balance: Some(dec!(200))
             }
         ];
         /*
@@ -422,6 +459,15 @@ mod test {
         * Then
         */
         let mut iter = txns.into_iter();
+        assert_eq!(iter.next(), Some(Transaction{
+            r#type: TransactionType::Buy,
+            paid_currency: "DOGE".to_string(),
+            paid_amount: dec!(2.94),
+            exchanged_currency: "SEK".to_string(),
+            exchanged_amount: dec!(-300),
+            date: "2021-11-10 17:03:13".to_string(),
+            is_vault: true
+        }));
         assert_eq!(iter.next(), Some(Transaction{
             r#type: TransactionType::Buy,
             paid_currency: "DOGE".to_string(),
