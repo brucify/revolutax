@@ -51,7 +51,7 @@ impl TaxableTransaction {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 struct Cost {
     paid_amount: Decimal,
     exchanged: Money,
@@ -126,7 +126,6 @@ impl CostBook {
             costs: vec![],
         }
     }
-
     fn add_buy(&mut self, transaction: &Transaction) {
         match transaction.to_money(&self.base) {
             Money::Cash(cash) => {
@@ -173,51 +172,77 @@ impl CostBook {
         }
     }
 
+    /// Find the costs for the given `income`. Then deduct them from the book.
     /// If `income` is `Money::Cash`, try deduct from the cash in the `CostBook`.
     /// Likewise, if `income` is `Money::Coupon`, try deduct from the coupons in the `CostBook`.
     /// Only start deducting from the vault if there are no non-vault costs to deduct.
+    /// Returns a `Vec<Cost>` which is a list of deducted costs.
     fn find_and_deduct_cost(&mut self, income: &Money, paid_amount: Decimal) -> io::Result<Vec<Cost>> {
-        let deduct_coupon_cost = |cost: &mut Cost, paid_amount: Decimal| cost.deduct_coupon_cost(paid_amount);
-        let deduct_cash_cost= |cost: &mut Cost, paid_amount: Decimal| cost.deduct_cash_cost(paid_amount);
-        let deduct_vault_coupon_cost = |cost: &mut Cost, paid_amount: Decimal| cost.deduct_vault_coupon_cost(paid_amount);
-        let deduct_vault_cash_cost = |cost: &mut Cost, paid_amount: Decimal| cost.deduct_vault_cash_cost(paid_amount);
-        match income {
-            Money::Cash(_) => self.do_find_and_deduct_cost(
-                paid_amount,
-                vec![deduct_cash_cost, deduct_coupon_cost, deduct_vault_cash_cost, deduct_vault_coupon_cost]
-            ),
-            Money::Coupon(_) => self.do_find_and_deduct_cost(
-                paid_amount,
-                vec![deduct_coupon_cost, deduct_cash_cost, deduct_vault_coupon_cost, deduct_vault_cash_cost]
-            )
+        let mut ddr = Deductor::new(&mut self.costs, paid_amount);
+        let deducted =
+            match income {
+                Money::Cash(_) =>
+                    ddr.deduct(Cost::deduct_cash_cost)
+                        .deduct(Cost::deduct_coupon_cost)
+                        .deduct(Cost::deduct_vault_cash_cost)
+                        .deduct(Cost::deduct_vault_coupon_cost)
+                        .collect(),
+                Money::Coupon(_) =>
+                    ddr.deduct(Cost::deduct_coupon_cost)
+                        .deduct(Cost::deduct_cash_cost)
+                        .deduct(Cost::deduct_vault_coupon_cost)
+                        .deduct(Cost::deduct_vault_cash_cost)
+                        .collect(),
+            };
+
+        match ddr.remaining.eq(&dec!(0)) {
+            true => Ok(deducted),
+            false => Err(io::Error::from(io::ErrorKind::InvalidData)) // Not enough costs to deduct from
         }
     }
 
-    fn do_find_and_deduct_cost(&mut self, remaining: Decimal, funs: Vec<fn(&mut Cost, Decimal) -> Option<Cost>>) -> io::Result<Vec<Cost>> {
-        let (remaining, costs): (Decimal, Vec<Cost>) =
-            funs.iter().fold((remaining, vec![]), |(remaining, acc), fun| {
-                let (remaining, acc) = self.costs.iter_mut().rev().fold((remaining, acc), |(remaining, mut acc), cost| {
-                    if remaining.eq(&dec!(0)) { (remaining, acc) }
-                    else {
-                        let amount = remaining.max(cost.paid_amount.neg());
-                        match fun(cost, amount) {
-                            None => (remaining, acc),
-                            Some(cost) => {
-                                acc.push(cost);
-                                (remaining.sub(amount), acc)
-                            }
-                        }
-                    }
-                });
-                self.costs.retain(|c| !c.paid_amount.is_zero());
-                (remaining, acc)
-            });
-        remaining.eq(&dec!(0)).then(|| ()).ok_or(io::Error::from(io::ErrorKind::InvalidData))?;
-        Ok(costs)
-    }
 }
 
+struct Deductor<'a> {
+    costs: &'a mut Vec<Cost>,
+    remaining: Decimal,
+    result: Vec<Cost>
+}
 
+impl<'a> Deductor<'a>
+{
+    fn new(costs: &mut Vec<Cost>, paid_amount: Decimal) -> Deductor {
+       Deductor { costs, remaining: paid_amount, result: vec![] }
+    }
+
+    /// Use the given closure to deduct costs from `self.costs`
+    fn deduct<T>(&mut self, deduct: T) -> &mut Deductor<'a>
+        where T: Fn(&mut Cost, Decimal) -> Option<Cost>
+    {
+        if !self.remaining.eq(&dec!(0)) {
+            self.costs.iter_mut().rev().fold((self.remaining, &mut self.result), |(remaining, acc), cost| {
+                if remaining.eq(&dec!(0)) { (remaining, acc) } else {
+                    let amount = remaining.max(cost.paid_amount.neg());
+
+                    match deduct(cost, amount) {
+                        None => (remaining, acc),
+                        Some(cost) => {
+                            acc.push(cost);
+                            self.remaining -= amount;
+                            (remaining.sub(amount), acc)
+                        }
+                    }
+                }
+            });
+            self.costs.retain(|c| !c.paid_amount.is_zero());
+        }
+        self
+    }
+
+    fn collect(&self) -> Vec<Cost> {
+        self.result.clone()
+    }
+}
 
 pub(crate) async fn tax(txns: &Vec<Transaction>, currency: &Currency, base: &Currency) -> io::Result<Vec<TaxableTransaction>> {
     let book = CostBook::new(currency.clone(), base.clone());
