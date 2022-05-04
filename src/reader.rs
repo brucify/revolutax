@@ -64,7 +64,8 @@ enum Type {
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 enum State {
-    Completed
+    Completed,
+    Declined,
 }
 
 /// Reads the file from path into a `Vec<Row>`.
@@ -106,6 +107,7 @@ pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Curren
             t.r#type == Type::Exchange
             || (t.r#type == Type::CardPayment && t.currency.eq(currency))
         })
+        .filter(|t| t.state == State::Completed)
         .filter(|t| t.currency.eq(currency) || t.description.contains(currency))// "Exchanged to ETH"
         .collect();
     Ok(txns)
