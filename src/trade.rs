@@ -4,9 +4,9 @@ use serde::Serialize;
 use std::fmt;
 
 #[derive(Debug, PartialEq, Serialize)]
-pub(crate) struct Transaction {
+pub(crate) struct Trade {
     #[serde(rename = "Type")]
-    pub(crate) r#type: TransactionType,
+    pub(crate) direction: Direction,
 
     #[serde(rename = "Paid Currency")]
     pub(crate) paid_currency: Currency,
@@ -27,10 +27,10 @@ pub(crate) struct Transaction {
     pub(crate) is_vault: bool,
 }
 
-impl Transaction {
-    pub(crate) fn new() -> Transaction {
-        Transaction{
-            r#type: TransactionType::Buy,
+impl Trade {
+    pub(crate) fn new() -> Trade {
+        Trade {
+            direction: Direction::Buy,
             paid_currency: "".to_string(),
             paid_amount: Default::default(),
             exchanged_currency: "".to_string(),
@@ -50,7 +50,7 @@ impl Transaction {
 }
 
 #[derive(Debug, PartialEq, Serialize)]
-pub(crate) enum TransactionType {
+pub(crate) enum Direction {
     Buy,
     Sell
 }

@@ -23,7 +23,7 @@ OPTIONS:
     -e, --exchanges              Filter the input csv file. Print to stdout a new csv file with
                                  items with type 'Exchange' only
     -h, --help                   Print help information
-    -t, --transactions           Merge both sides of a currency 'Exchange' into a single line. Print
+    -t, --trades                 Merge two lines of a currency 'Exchange' into a single trade. Print
                                  to stdout a new csv file
 ```
 
@@ -54,10 +54,10 @@ $ cargo run -- transactions_history.csv --currency ETH --base SEK > tax_btc.csv
 | 2021-11-01 08:30:00 | BTC      | -0.001 | 20000                        | (-100000 DOGE 2021-10-02 17:30:00)                                     |            |
 
 
-Or just outputs the trades in a new csv file `txns_btc.csv`:
+Or just outputs the trades in a new csv file `trades_btc.csv`:
 
 ```bash
-$ cargo run -- transactions_history.csv --currency ETH --base SEK --transactions > txn_btc.csv
+$ cargo run -- transactions_history.csv --currency ETH --base SEK --trades > trades_btc.csv
 ```
 
 | Type | Paid Currency | Paid Amount | Exchanged Currency | Exchanged Amount | Date                | Vault |
@@ -79,7 +79,7 @@ Run
 
     $ cargo run -- transactions_history.csv --currency ETH --base SEK > tax_eth.csv
     $ cargo run -- transactions_history.csv --currency ETH --exchanges > exchanges_eth.csv
-    $ cargo run -- transactions_history.csv --currency ETH --transactions > txns_eth.csv
+    $ cargo run -- transactions_history.csv --currency ETH --trades > trades_eth.csv
 
 Or
 

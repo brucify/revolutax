@@ -17,8 +17,8 @@ struct Cli {
     #[clap(short, long, help = "Filter the input csv file. Print to stdout a new csv file with items with type 'Exchange' only")]
     exchanges: bool,
 
-    #[clap(short, long, help = "Merge both sides of a currency 'Exchange' into a single line. Print to stdout a new csv file")]
-    transactions: bool,
+    #[clap(short, long, help = "Merge two lines of a currency 'Exchange' into a single trade. Print to stdout a new csv file")]
+    trades: bool,
 
 }
 
@@ -37,7 +37,7 @@ fn main() {
                 .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
                 .unwrap(),
         }
-    } else if args.transactions {
+    } else if args.trades {
         cryptotax::merge_exchanges(&args.path, &currency)
             .with_context(|| format!("Could not merge exchanges from file `{:?}`", &args.path))
             .unwrap();

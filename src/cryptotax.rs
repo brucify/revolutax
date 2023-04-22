@@ -43,11 +43,11 @@ pub fn merge_exchanges(path: &PathBuf, currency: &String) -> io::Result<()> {
     info!("reader::read_exchanges_in_currency done. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let txns =  block_on(reader::to_transactions(&rows, currency))?;
+    let trades =  block_on(reader::to_trades(&rows, currency))?;
     info!("reader::to_transactions done. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    block_on(writer::print(&txns))?;
+    block_on(writer::print(&trades))?;
     info!("calculator::tax done. Elapsed: {:.2?}", now.elapsed());
 
     Ok(())
@@ -64,15 +64,15 @@ pub fn calculate_tax(path: &PathBuf, currency: &String, base: &String) -> io::Re
     info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let txns =  block_on(reader::to_transactions(&rows, currency))?;
+    let trades =  block_on(reader::to_trades(&rows, currency))?;
     info!("Done converting to transactions. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let txns =  block_on(calculator::tax(&txns, currency, base))?;
+    let trades =  block_on(calculator::tax(&trades, currency, base))?;
     info!("Done calculating taxes. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    block_on(writer::print(&txns))?;
+    block_on(writer::print(&trades))?;
     info!("Done printing rows. Elapsed: {:.2?}", now.elapsed());
 
     Ok(())
