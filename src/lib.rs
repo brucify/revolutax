@@ -1,5 +1,5 @@
 pub mod cryptotax;
 mod calculator;
 mod reader;
-mod transaction;
+mod trade;
 mod writer;

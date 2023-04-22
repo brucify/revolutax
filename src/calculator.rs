@@ -1,4 +1,4 @@
-use crate::transaction::{Currency, Transaction, TransactionType, Money};
+use crate::trade::{Currency, Trade, Direction, Money};
 use log::debug;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -13,7 +13,7 @@ use std::ops::{Neg, Sub};
 // 3. Bought from Crypto 2 (SEK price as cost),     sold to Crypto 3 (SEK price as sales)
 // 4. Bought from Crypto 3 (SEK price as cost),     sold to SEK      (sales in SEK)
 #[derive(Debug, PartialEq)]
-pub(crate) struct TaxableTransaction {
+pub(crate) struct TaxableTrade {
     date: String,
     currency: Currency,             // Valutakod
     amount: Decimal,                // Antal
@@ -22,12 +22,12 @@ pub(crate) struct TaxableTransaction {
     net_income: Option<Decimal>,    // Vinst/förlust
 }
 
-impl Serialize for TaxableTransaction {
+impl Serialize for TaxableTrade {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
         where S: Serializer,
     {
         // 6 is the number of fields in the struct.
-        let mut state = serializer.serialize_struct("TaxableTransaction", 6)?;
+        let mut state = serializer.serialize_struct("TaxableTrade", 6)?;
         state.serialize_field("Date", &self.date)?;
         state.serialize_field("Currency", &self.currency)?;
         state.serialize_field("Amount", &self.amount)?;
@@ -38,7 +38,7 @@ impl Serialize for TaxableTransaction {
     }
 }
 
-impl TaxableTransaction {
+impl TaxableTrade {
     fn costs_to_string(&self) -> String {
         if self.costs.iter().all(|c| c.is_cash()) {
             self.costs.iter()
@@ -126,7 +126,7 @@ impl CostBook {
             costs: vec![],
         }
     }
-    fn add_buy(&mut self, transaction: &Transaction) {
+    fn add_buy(&mut self, transaction: &Trade) {
         match transaction.to_money(&self.base) {
             Money::Cash(cash) => {
                 self.find_cash_cost_mut(transaction.is_vault).map(|cost|
@@ -140,7 +140,7 @@ impl CostBook {
         }
     }
 
-    fn add_sell(&mut self, transaction: &Transaction) -> io::Result<TaxableTransaction> {
+    fn add_sell(&mut self, transaction: &Trade) -> io::Result<TaxableTrade> {
         let income = transaction.to_money(&self.base);
         let costs =
             self.find_and_deduct_cost(&income, transaction.paid_amount)?
@@ -148,7 +148,7 @@ impl CostBook {
                 .map(|c| c.exchanged)
                 .collect();
         let net_income = income.to_net_income(&costs);
-        Ok(TaxableTransaction{
+        Ok(TaxableTrade {
             date: transaction.date.clone(),
             currency: transaction.paid_currency.clone(),
             amount: transaction.paid_amount,
@@ -244,13 +244,13 @@ impl<'a> Deductor<'a>
     }
 }
 
-pub(crate) async fn tax(txns: &Vec<Transaction>, currency: &Currency, base: &Currency) -> io::Result<Vec<TaxableTransaction>> {
+pub(crate) async fn tax(trades: &Vec<Trade>, currency: &Currency, base: &Currency) -> io::Result<Vec<TaxableTrade>> {
     let book = CostBook::new(currency.clone(), base.clone());
-    let (txns, b) =
-        txns.iter().fold((vec![], book), |(mut acc, mut book), t| {
-            match t.r#type {
-                TransactionType::Buy => book.add_buy(t),
-                TransactionType::Sell => {
+    let (trades, b) =
+        trades.iter().fold((vec![], book), |(mut acc, mut book), t| {
+            match t.direction {
+                Direction::Buy => book.add_buy(t),
+                Direction::Sell => {
                     let x = book.add_sell(t).unwrap();
                     acc.push(x);
                 },
@@ -260,14 +260,14 @@ pub(crate) async fn tax(txns: &Vec<Transaction>, currency: &Currency, base: &Cur
     debug!("Remaining costs for {:?}:", b.currency);
     b.costs.iter().for_each(|c| debug!("{:?}", c));
     debug!("Taxable transactions:");
-    txns.iter().for_each(|t| debug!("{:?}", t));
-    Ok(txns)
+    trades.iter().for_each(|t| debug!("{:?}", t));
+    Ok(trades)
 }
 
 #[cfg(test)]
 mod test {
-    use crate::calculator::{Cost, CostBook, TaxableTransaction};
-    use crate::transaction::{Cash, Coupon, Money, Transaction, TransactionType};
+    use crate::calculator::{Cost, CostBook, TaxableTrade};
+    use crate::trade::{Cash, Coupon, Money, Trade, Direction};
     use rust_decimal_macros::dec;
     use std::error::Error;
 
@@ -281,8 +281,8 @@ mod test {
         /*
          * When
          */
-        let txn = Transaction{
-            r#type: TransactionType::Buy,
+        let trade = Trade {
+            direction: Direction::Buy,
             paid_currency: "DOGE".to_string(),
             paid_amount: dec!(39.94),
             exchanged_currency: "SEK".to_string(),
@@ -290,10 +290,10 @@ mod test {
             date: "2021-11-11 18:03:13".to_string(),
             is_vault: true
         };
-        book.add_buy(&txn);
+        book.add_buy(&trade);
 
-        let txn = Transaction{
-            r#type: TransactionType::Buy,
+        let trade = Trade {
+            direction: Direction::Buy,
             paid_currency: "DOGE".to_string(),
             paid_amount: dec!(2000),
             exchanged_currency: "SEK".to_string(),
@@ -301,10 +301,10 @@ mod test {
             date: "2021-12-31 17:54:48".to_string(),
             is_vault: false
         };
-        book.add_buy(&txn);
+        book.add_buy(&trade);
 
-        let txn = Transaction{
-            r#type: TransactionType::Buy,
+        let trade = Trade {
+            direction: Direction::Buy,
             paid_currency: "DOGE".to_string(),
             paid_amount: dec!(200),
             exchanged_currency: "EOS".to_string(),
@@ -312,10 +312,10 @@ mod test {
             date: "2022-02-03 10:30:29".to_string(),
             is_vault: false
         };
-        book.add_buy(&txn);
+        book.add_buy(&trade);
 
-        let txn = Transaction{
-            r#type: TransactionType::Buy,
+        let trade = Trade {
+            direction: Direction::Buy,
             paid_currency: "DOGE".to_string(),
             paid_amount: dec!(30.3),
             exchanged_currency: "EOS".to_string(),
@@ -323,7 +323,7 @@ mod test {
             date: "2022-02-04 11:01:35".to_string(),
             is_vault: false
         };
-        book.add_buy(&txn);
+        book.add_buy(&trade);
 
         /*
          * Then
@@ -373,8 +373,8 @@ mod test {
         /*
          * When
          */
-        let txn = Transaction{
-            r#type: TransactionType::Sell,
+        let trade = Trade {
+            direction: Direction::Sell,
             paid_currency: "DOGE".to_string(),
             paid_amount: dec!(-50),
             exchanged_currency: "SEK".to_string(),
@@ -382,12 +382,12 @@ mod test {
             date: "2022-05-05 05:01:12".to_string(),
             is_vault: false
         };
-        let x = book.add_sell(&txn)?;
+        let x = book.add_sell(&trade)?;
 
         /*
          * Then
          */
-        assert_eq!(x, TaxableTransaction{
+        assert_eq!(x, TaxableTrade {
             date: "2022-05-05 05:01:12".to_string(),
             currency: "DOGE".to_string(),
             amount: dec!(-50),
@@ -396,8 +396,8 @@ mod test {
             net_income: Some(dec!(95.63))
         });
 
-        let txn = Transaction{
-            r#type: TransactionType::Sell,
+        let trade = Trade {
+            direction: Direction::Sell,
             paid_currency: "DOGE".to_string(),
             paid_amount: dec!(-50),
             exchanged_currency: "BTC".to_string(),
@@ -405,8 +405,8 @@ mod test {
             date: "2022-07-06 06:02:13".to_string(),
             is_vault: false
         };
-        let x = book.add_sell(&txn)?;
-        assert_eq!(x, TaxableTransaction{
+        let x = book.add_sell(&trade)?;
+        assert_eq!(x, TaxableTrade {
             date: "2022-07-06 06:02:13".to_string(),
             currency: "DOGE".to_string(),
             amount: dec!(-50),
@@ -415,8 +415,8 @@ mod test {
             net_income: None
         });
 
-        let txn = Transaction{
-            r#type: TransactionType::Sell,
+        let trade = Trade {
+            direction: Direction::Sell,
             paid_currency: "DOGE".to_string(),
             paid_amount: dec!(-1250),
             exchanged_currency: "BCH".to_string(),
@@ -424,8 +424,8 @@ mod test {
             date: "2022-08-07 07:03:14".to_string(),
             is_vault: false
         };
-        let x = book.add_sell(&txn)?;
-        assert_eq!(x, TaxableTransaction{
+        let x = book.add_sell(&trade)?;
+        assert_eq!(x, TaxableTrade {
             date: "2022-08-07 07:03:14".to_string(),
             currency: "DOGE".to_string(),
             amount: dec!(-1250),

@@ -1,4 +1,4 @@
-use crate::transaction::{Currency, Transaction, TransactionType};
+use crate::trade::{Currency, Trade, Direction};
 use csv::{ReaderBuilder, Trim};
 use log::{debug, info};
 use rust_decimal::prelude::*;
@@ -80,28 +80,28 @@ async fn deserialize_from(path: &PathBuf) -> io::Result<Vec<Row>> {
     info!("ReaderBuilder::from_path done. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let txns: Vec<Row> =
+    let rows: Vec<Row> =
         rdr.deserialize::<Row>()
             .filter_map(|record| record.ok())
             .collect();
     info!("reader::deserialize done. Elapsed: {:.2?}", now.elapsed());
 
-    Ok(txns)
+    Ok(rows)
 }
 
 /// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange`.
 pub(crate) async fn read_exchanges(path: &PathBuf) -> io::Result<Vec<Row>> {
-    let txns = deserialize_from(path).await?
+    let rows = deserialize_from(path).await?
         .into_iter()
         .filter(|t| t.r#type == Type::Exchange)
         .collect();
-    Ok(txns)
+    Ok(rows)
 }
 
 /// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange` in the
 /// target currency, or  with type `Card Payment` but in the target currency.
 pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Currency) -> io::Result<Vec<Row>> {
-    let txns = deserialize_from(path).await?
+    let rows = deserialize_from(path).await?
         .into_iter()
         .filter(|t| {
             t.r#type == Type::Exchange
@@ -110,12 +110,12 @@ pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Curren
         .filter(|t| t.state == State::Completed)
         .filter(|t| t.currency.eq(currency) || t.description.contains(currency))// "Exchanged to ETH"
         .collect();
-    Ok(txns)
+    Ok(rows)
 }
 
-/// Converts `Vec<Row>` into `Vec<Transaction>`, given a target currency.
-pub(crate) async fn to_transactions(rows: &Vec<Row>, currency: &Currency) -> io::Result<Vec<Transaction>> {
-    let (txns, _): (Vec<Transaction>, Option<&Row>) =
+/// Converts `Vec<Row>` into `Vec<Trade>`, given a target currency.
+pub(crate) async fn to_trades(rows: &Vec<Row>, currency: &Currency) -> io::Result<Vec<Trade>> {
+    let (trades, _): (Vec<Trade>, Option<&Row>) =
         rows.iter().rev()
             .fold((vec![], None), |(mut acc, prev), row| {
                 match row.r#type {
@@ -123,22 +123,22 @@ pub(crate) async fn to_transactions(rows: &Vec<Row>, currency: &Currency) -> io:
                         match prev {
                             None => (acc, Some(row)),
                             Some(prev) => {
-                                let txn = prev.to_transaction(None, currency);
-                                let txn = row.to_transaction(Some(txn), currency);
-                                acc.push(txn);
+                                let trade = prev.to_trade(None, currency);
+                                let trade = row.to_trade(Some(trade), currency);
+                                acc.push(trade);
                                 (acc, None)
                             }
                         }
                     }
                     Type::CardPayment => {
-                        let txn = row.to_transaction(None, currency);
-                        acc.push(txn);
+                        let trade = row.to_trade(None, currency);
+                        acc.push(trade);
                         (acc, prev)
                     }
                     _ => (acc, prev)
                 }
             });
-    Ok(txns)
+    Ok(trades)
 }
 
 // 1. Bought Crypto 1 from SEK      (cost in SEK),  sold to SEK      (sales in SEK)
@@ -146,71 +146,67 @@ pub(crate) async fn to_transactions(rows: &Vec<Row>, currency: &Currency) -> io:
 // 3. Bought from Crypto 2 (SEK price as cost),     sold to Crypto 3 (SEK price as sales)
 // 4. Bought from Crypto 3 (SEK price as cost),     sold to SEK      (sales in SEK)
 impl Row {
-    fn to_transaction(&self, txn: Option<Transaction>, currency: &Currency) -> Transaction {
-        let mut txn = txn.unwrap_or(Transaction::new());
+    fn to_trade(&self, trade: Option<Trade>, currency: &Currency) -> Trade {
+        let mut trade = trade.unwrap_or(Trade::new());
 
         match self.r#type {
-            Type::Exchange => self.exchange_to_transaction(&mut txn, currency),
-            Type::CardPayment => self.card_payment_to_transaction(&mut txn, currency),
+            Type::Exchange => self.exchange_to_trade(&mut trade, currency),
+            Type::CardPayment => self.card_payment_to_trade(&mut trade, currency),
             _ => {}
         }
 
-        txn
+        trade
     }
 
-    fn exchange_to_transaction(&self, txn: &mut Transaction, currency: &Currency) {
-        if self.started_date.contains("2021-11-17 15:26:31") {
-            debug!("hello: {:?}", self);
-        }
-
+    fn exchange_to_trade(&self, trade: &mut Trade, currency: &Currency) {
         // target currency: "BCH", currency: "BCH", description: "Exchanged from SEK"
         // if self.currency.eq(currency) && self.description.contains("Exchanged from") {
         if self.currency.eq(currency) && self.amount.is_sign_positive() {
             debug!("{:?}: Bought {:?} of {:?} ({:?}), incl. fee {:?}", self.started_date, self.amount+self.fee, self.currency, self.description, self.fee);
-            txn.r#type = TransactionType::Buy;
-            txn.paid_amount = self.amount + self.fee;
-            txn.paid_currency = currency.clone();
-            txn.date = self.started_date.clone();
+            trade.direction = Direction::Buy;
+            trade.paid_amount = self.amount + self.fee;
+            trade.paid_currency = currency.clone();
+            trade.date = self.started_date.clone();
 
         }
         // target currency: "BCH", currency: "BCH", description: "Exchanged to SEK"
         // if self.currency.eq(currency) && self.description.contains("Exchanged to") {
         if self.currency.eq(currency) && self.amount.is_sign_negative() {
             debug!("{:?}: Sold {:?} of {:?} ({:?}), incl. fee {:?}", self.started_date, self.amount+self.fee, self.currency, self.description, self.fee);
-            txn.r#type = TransactionType::Sell;
-            txn.paid_amount = self.amount + self.fee;
-            txn.paid_currency = currency.clone();
-            txn.date = self.started_date.clone();
+            trade.direction = Direction::Sell;
+            trade.paid_amount = self.amount + self.fee;
+            trade.paid_currency = currency.clone();
+            trade.date = self.started_date.clone();
         }
         // target currency: "BCH", currency: "SEK", description: "Exchanged from BCH"
         if self.description.contains("Exchanged from") && self.description.contains(currency) {
             debug!("{:?}: Income of selling is the price of {:?} of {:?} in SEK ({:?}), incl. fee {:?}", self.started_date, self.amount+self.fee, self.currency, self.description, self.fee);
-            txn.r#type = TransactionType::Sell;
-            txn.exchanged_amount = self.amount + self.fee;
-            txn.exchanged_currency = self.currency.clone();
+            trade.direction = Direction::Sell;
+            trade.exchanged_amount = self.amount + self.fee;
+            trade.exchanged_currency = self.currency.clone();
         }
         // target currency: "BCH", currency: "SEK", description: "Exchanged to BCH"
         if self.description.contains("Exchanged to") && self.description.contains(currency) {
             debug!("{:?}: Cost of buying is the price of {:?} of {:?} in SEK ({:?}), incl. fee {:?}", self.started_date, self.amount+self.fee, self.currency, self.description, self.fee);
-            txn.r#type = TransactionType::Buy;
-            txn.exchanged_amount = self.amount + self.fee;
-            txn.exchanged_currency = self.currency.clone();
+            trade.direction = Direction::Buy;
+            trade.exchanged_amount = self.amount + self.fee;
+            trade.exchanged_currency = self.currency.clone();
         }
         if self.description.contains("Vault") {
-            txn.is_vault = true;
+            trade.is_vault = true;
         }
     }
 
-    fn card_payment_to_transaction(&self, txn: &mut Transaction, currency: &Currency) {
+    fn card_payment_to_trade(&self, trade: &mut Trade, currency: &Currency) {
         // amount: -0.00123456, fee: 0.00000000, currency: "BTC", original_amount: -543.21, original_currency: "SEK",
         // settled_amount: Some(543.21), settled_currency: Some("SEK"), state: Completed, balance: Some(0.00000000) }
-        txn.r#type = TransactionType::Sell;
-        txn.paid_amount = self.amount + self.fee;
-        txn.paid_currency = currency.clone();
-        txn.exchanged_amount = self.original_amount.neg();
-        txn.exchanged_currency = self.original_currency.clone();
-        txn.date = self.started_date.clone();
-        txn.is_vault = false;
+        trade.direction = Direction::Sell;
+        trade.paid_amount = self.amount + self.fee;
+        trade.paid_currency = currency.clone();
+        trade.exchanged_amount = self.original_amount.neg();
+        trade.exchanged_currency = self.original_currency.clone();
+        trade.date = self.started_date.clone();
+        trade.is_vault = false;
     }
 }
 
@@ -311,7 +307,7 @@ mod test {
     }
 
     #[test]
-    fn should_parse_to_transactions() -> Result<(), Box<dyn Error>> {
+    fn should_parse_trades_from_rows() -> Result<(), Box<dyn Error>> {
         /*
          * Given
          */
@@ -455,14 +451,14 @@ mod test {
         /*
          * When
          */
-        let txns = block_on(to_transactions(&rows, &"DOGE".to_string()))?;
+        let trades = block_on(to_trades(&rows, &"DOGE".to_string()))?;
 
         /*
         * Then
         */
-        let mut iter = txns.into_iter();
-        assert_eq!(iter.next(), Some(Transaction{
-            r#type: TransactionType::Buy,
+        let mut iter = trades.into_iter();
+        assert_eq!(iter.next(), Some(Trade {
+            direction: Direction::Buy,
             paid_currency: "DOGE".to_string(),
             paid_amount: dec!(2.94),
             exchanged_currency: "SEK".to_string(),
@@ -470,8 +466,8 @@ mod test {
             date: "2021-11-10 17:03:13".to_string(),
             is_vault: true
         }));
-        assert_eq!(iter.next(), Some(Transaction{
-            r#type: TransactionType::Buy,
+        assert_eq!(iter.next(), Some(Trade {
+            direction: Direction::Buy,
             paid_currency: "DOGE".to_string(),
             paid_amount: dec!(39.94),
             exchanged_currency: "SEK".to_string(),
@@ -479,8 +475,8 @@ mod test {
             date: "2021-11-11 18:03:13".to_string(),
             is_vault: true
         }));
-        assert_eq!(iter.next(), Some(Transaction{
-            r#type: TransactionType::Buy,
+        assert_eq!(iter.next(), Some(Trade {
+            direction: Direction::Buy,
             paid_currency: "DOGE".to_string(),
             paid_amount: dec!(2000),
             exchanged_currency: "SEK".to_string(),
@@ -488,8 +484,8 @@ mod test {
             date: "2021-12-31 17:54:48".to_string(),
             is_vault: false
         }));
-        assert_eq!(iter.next(), Some(Transaction{
-            r#type: TransactionType::Sell,
+        assert_eq!(iter.next(), Some(Trade {
+            direction: Direction::Sell,
             paid_currency: "DOGE".to_string(),
             paid_amount: dec!(-921.27099440),
             exchanged_currency: "EOS".to_string(),
@@ -497,8 +493,8 @@ mod test {
             date: "2022-03-01 16:21:49".to_string(),
             is_vault: false
         }));
-        assert_eq!(iter.next(), Some(Transaction{
-            r#type: TransactionType::Sell,
+        assert_eq!(iter.next(), Some(Trade {
+            direction: Direction::Sell,
             paid_currency: "DOGE".to_string(),
             paid_amount: dec!(-123.45678901),
             exchanged_currency: "SEK".to_string(),
