@@ -1,8 +1,9 @@
+use crate::calculator::Currency;
+use crate::calculator::money::Money;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use serde::{Serialize, Serializer};
 use serde::ser::SerializeStruct;
-use crate::calculator::{Currency, Money};
+use serde::{Serialize, Serializer};
 
 // 1. Bought Crypto 1 from SEK      (cost in SEK),  sold to SEK      (sales in SEK)
 // 2. Bought Crypto 1 from SEK      (cost in SEK),  sold to Crypto 2 (SEK price as sales)
