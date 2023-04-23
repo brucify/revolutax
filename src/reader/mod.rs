@@ -1,13 +1,13 @@
-pub(crate) mod row;
+pub(crate) mod revolut_row;
 
 use crate::calculator::Currency;
-use crate::reader::row::{Row, State, Type};
+use crate::reader::revolut_row::{RevolutRow, State, Type};
 use csv::{ReaderBuilder, Trim};
 use log::info;
 use std::path::PathBuf;
 
 /// Reads the file from path into a `Vec<Row>`.
-async fn deserialize_from(path: &PathBuf) -> std::io::Result<Vec<Row>> {
+async fn deserialize_from(path: &PathBuf) -> std::io::Result<Vec<RevolutRow>> {
     let now = std::time::Instant::now();
     let mut rdr = ReaderBuilder::new()
         .has_headers(true)
@@ -18,8 +18,8 @@ async fn deserialize_from(path: &PathBuf) -> std::io::Result<Vec<Row>> {
     info!("ReaderBuilder::from_path done. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let rows: Vec<Row> =
-        rdr.deserialize::<Row>()
+    let rows: Vec<RevolutRow> =
+        rdr.deserialize::<RevolutRow>()
             .filter_map(|record| record.ok())
             .collect();
     info!("reader::deserialize done. Elapsed: {:.2?}", now.elapsed());
@@ -28,7 +28,7 @@ async fn deserialize_from(path: &PathBuf) -> std::io::Result<Vec<Row>> {
 }
 
 /// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange`.
-pub(crate) async fn read_exchanges(path: &PathBuf) -> std::io::Result<Vec<Row>> {
+pub(crate) async fn read_exchanges(path: &PathBuf) -> std::io::Result<Vec<RevolutRow>> {
     let rows = deserialize_from(path).await?
         .into_iter()
         .filter(|t| t.r#type == Type::Exchange)
@@ -38,7 +38,7 @@ pub(crate) async fn read_exchanges(path: &PathBuf) -> std::io::Result<Vec<Row>> 
 
 /// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange` in the
 /// target currency, or  with type `Card Payment` but in the target currency.
-pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Currency) -> std::io::Result<Vec<Row>> {
+pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Currency) -> std::io::Result<Vec<RevolutRow>> {
     let rows = deserialize_from(path).await?
         .into_iter()
         .filter(|t| {
