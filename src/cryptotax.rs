@@ -6,7 +6,7 @@ use std::path::PathBuf;
 /// `std::io::stdout()`.
 pub async fn print_exchanges(path: &PathBuf) -> std::io::Result<()> {
     let now = std::time::Instant::now();
-    let rows = reader::read_exchanges(path).await?;
+    let rows = reader::RevolutRow2022::read_exchanges(path).await?;
     info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
@@ -21,7 +21,7 @@ pub async fn print_exchanges(path: &PathBuf) -> std::io::Result<()> {
 /// and finally prints the results to `std::io::stdout()`.
 pub async fn print_exchanges_in_currency(path: &PathBuf, currency: &String) -> std::io::Result<()> {
     let now = std::time::Instant::now();
-    let rows = reader::read_exchanges_in_currency(path, currency).await?;
+    let rows = reader::RevolutRow2022::read_exchanges_in_currency(path, currency).await?;
     info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
@@ -37,11 +37,11 @@ pub async fn print_exchanges_in_currency(path: &PathBuf, currency: &String) -> s
 /// and finally prints the results to `std::io::stdout()`.
 pub async fn merge_exchanges(path: &PathBuf, currency: &String) -> std::io::Result<()> {
     let now = std::time::Instant::now();
-    let rows = reader::read_exchanges_in_currency(path, currency).await?;
-    info!("reader::read_exchanges_in_currency done. Elapsed: {:.2?}", now.elapsed());
+    let rows = reader::RevolutRow2022::read_exchanges_in_currency(path, currency).await?;
+    info!("reader::RevolutRow2022::read_exchanges_in_currency done. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let trades =  reader::revolut_row::to_trades(&rows, currency).await?;
+    let trades =  reader::RevolutRow2022::rows_to_trades(&rows, currency).await?;
     info!("reader::to_transactions done. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
@@ -58,11 +58,11 @@ pub async fn merge_exchanges(path: &PathBuf, currency: &String) -> std::io::Resu
 /// and finally prints the results to `std::io::stdout()`.
 pub async fn calculate_tax(path: &PathBuf, currency: &String, base: &String) -> std::io::Result<()> {
     let now = std::time::Instant::now();
-    let rows = reader::read_exchanges_in_currency(path, currency).await?;
+    let rows = reader::RevolutRow2022::read_exchanges_in_currency(path, currency).await?;
     info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let trades = reader::revolut_row::to_trades(&rows, currency).await?;
+    let trades = reader::RevolutRow2022::rows_to_trades(&rows, currency).await?;
     info!("Done converting to transactions. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
