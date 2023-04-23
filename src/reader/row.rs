@@ -1,17 +1,14 @@
 use crate::calculator::Currency;
 use crate::calculator::trade::{Direction, Trade};
-use csv::{ReaderBuilder, Trim};
-use log::{debug, info};
-use rust_decimal::prelude::*;
+use log::debug;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
-use std::io::{self};
 use std::ops::Neg;
-use std::path::PathBuf;
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub(crate) struct Row {
     #[serde(rename = "Type")]
-    r#type: Type,
+    pub(crate) r#type: Type,
 
     #[serde(rename = "Started Date")]
     started_date: String,
@@ -20,7 +17,7 @@ pub(crate) struct Row {
     completed_date: Option<String>,
 
     #[serde(rename = "Description")]
-    description: String,
+    pub(crate) description: String,
 
     #[serde(rename = "Amount")]
     amount: Decimal,
@@ -29,7 +26,7 @@ pub(crate) struct Row {
     fee: Decimal,
 
     #[serde(rename = "Currency")]
-    currency: Currency,
+    pub(crate) currency: Currency,
 
     #[serde(rename = "Original Amount")]
     original_amount: Decimal,
@@ -44,7 +41,7 @@ pub(crate) struct Row {
     settled_currency: Option<Currency>,
 
     #[serde(rename = "State")]
-    state: State,
+    pub(crate) state: State,
 
     #[serde(rename = "Balance")]
     balance: Option<Decimal>,
@@ -52,7 +49,7 @@ pub(crate) struct Row {
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "PascalCase")]
-enum Type {
+pub(crate) enum Type {
     Exchange,
     Transfer,
     Cashback,
@@ -64,58 +61,13 @@ enum Type {
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "PascalCase")]
-enum State {
+pub(crate) enum State {
     Completed,
     Declined,
 }
 
-/// Reads the file from path into a `Vec<Row>`.
-async fn deserialize_from(path: &PathBuf) -> io::Result<Vec<Row>> {
-    let now = std::time::Instant::now();
-    let mut rdr = ReaderBuilder::new()
-        .has_headers(true)
-        // .delimiter(b';')
-        .delimiter(b',')
-        .trim(Trim::All)
-        .from_path(path)?;
-    info!("ReaderBuilder::from_path done. Elapsed: {:.2?}", now.elapsed());
-
-    let now = std::time::Instant::now();
-    let rows: Vec<Row> =
-        rdr.deserialize::<Row>()
-            .filter_map(|record| record.ok())
-            .collect();
-    info!("reader::deserialize done. Elapsed: {:.2?}", now.elapsed());
-
-    Ok(rows)
-}
-
-/// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange`.
-pub(crate) async fn read_exchanges(path: &PathBuf) -> io::Result<Vec<Row>> {
-    let rows = deserialize_from(path).await?
-        .into_iter()
-        .filter(|t| t.r#type == Type::Exchange)
-        .collect();
-    Ok(rows)
-}
-
-/// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange` in the
-/// target currency, or  with type `Card Payment` but in the target currency.
-pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Currency) -> io::Result<Vec<Row>> {
-    let rows = deserialize_from(path).await?
-        .into_iter()
-        .filter(|t| {
-            t.r#type == Type::Exchange
-            || (t.r#type == Type::CardPayment && t.currency.eq(currency))
-        })
-        .filter(|t| t.state == State::Completed)
-        .filter(|t| t.currency.eq(currency) || t.description.contains(currency))// "Exchanged to ETH"
-        .collect();
-    Ok(rows)
-}
-
 /// Converts `Vec<Row>` into `Vec<Trade>`, given a target currency.
-pub(crate) async fn to_trades(rows: &Vec<Row>, currency: &Currency) -> io::Result<Vec<Trade>> {
+pub(crate) async fn to_trades(rows: &Vec<Row>, currency: &Currency) -> std::io::Result<Vec<Trade>> {
     let (trades, _): (Vec<Trade>, Option<&Row>) =
         rows.iter().rev()
             .fold((vec![], None), |(mut acc, prev), row| {
@@ -213,7 +165,9 @@ impl Row {
 
 #[cfg(test)]
 mod test {
-    use crate::reader::*;
+    use crate::calculator::trade::{Direction, Trade};
+    use crate::reader::deserialize_from;
+    use crate::reader::row::{Row, State, to_trades, Type};
     use futures::executor::block_on;
     use rust_decimal_macros::dec;
     use std::error::Error;

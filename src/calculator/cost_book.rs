@@ -224,12 +224,12 @@ impl<'a> Deductor<'a>
 
 #[cfg(test)]
 mod test {
-    use rust_decimal_macros::dec;
-    use std::error::Error;
     use crate::calculator::cost_book::{Cost, CostBook};
     use crate::calculator::money::{Cash, Coupon, Money};
     use crate::calculator::taxable_trade::TaxableTrade;
     use crate::calculator::trade::{Direction, Trade};
+    use rust_decimal_macros::dec;
+    use std::error::Error;
 
     #[test]
     fn should_add_buy() -> Result<(), Box<dyn Error>> {
