@@ -1,12 +1,12 @@
+use crate::reader::row::to_trades;
 use crate::{calculator, reader, writer};
 use futures::executor::block_on;
 use log::info;
-use std::io;
 use std::path::PathBuf;
 
 /// Reads the transactions with type `Exchange` from the path and prints the results to
 /// `std::io::stdout()`.
-pub fn print_exchanges(path: &PathBuf) -> io::Result<()> {
+pub fn print_exchanges(path: &PathBuf) -> std::io::Result<()> {
     let now = std::time::Instant::now();
     let rows = block_on(reader::read_exchanges(path))?;
     info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
@@ -21,7 +21,7 @@ pub fn print_exchanges(path: &PathBuf) -> io::Result<()> {
 /// Reads the transactions with type `Exchange` from the path,
 /// filters for the target currency,
 /// and finally prints the results to `std::io::stdout()`.
-pub fn print_exchanges_in_currency(path: &PathBuf, currency: &String) -> io::Result<()> {
+pub fn print_exchanges_in_currency(path: &PathBuf, currency: &String) -> std::io::Result<()> {
     let now = std::time::Instant::now();
     let rows = block_on(reader::read_exchanges_in_currency(path, currency))?;
     info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
@@ -37,13 +37,13 @@ pub fn print_exchanges_in_currency(path: &PathBuf, currency: &String) -> io::Res
 /// filters for the target currency,
 /// converts the csv rows into transactions,
 /// and finally prints the results to `std::io::stdout()`.
-pub fn merge_exchanges(path: &PathBuf, currency: &String) -> io::Result<()> {
+pub fn merge_exchanges(path: &PathBuf, currency: &String) -> std::io::Result<()> {
     let now = std::time::Instant::now();
     let rows = block_on(reader::read_exchanges_in_currency(path, currency))?;
     info!("reader::read_exchanges_in_currency done. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let trades =  block_on(reader::to_trades(&rows, currency))?;
+    let trades =  block_on(to_trades(&rows, currency))?;
     info!("reader::to_transactions done. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
@@ -58,13 +58,13 @@ pub fn merge_exchanges(path: &PathBuf, currency: &String) -> io::Result<()> {
 /// converts the csv rows into transactions,
 /// calculates tax from the transactions,
 /// and finally prints the results to `std::io::stdout()`.
-pub fn calculate_tax(path: &PathBuf, currency: &String, base: &String) -> io::Result<()> {
+pub fn calculate_tax(path: &PathBuf, currency: &String, base: &String) -> std::io::Result<()> {
     let now = std::time::Instant::now();
     let rows = block_on(reader::read_exchanges_in_currency(path, currency))?;
     info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let trades =  block_on(reader::to_trades(&rows, currency))?;
+    let trades =  block_on(to_trades(&rows, currency))?;
     info!("Done converting to transactions. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
