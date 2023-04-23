@@ -1,6 +1,7 @@
 use anyhow::Context;
 use cryptotax::cryptotax;
 use clap::Parser;
+use futures::executor::block_on;
 
 /// Search for currency exchanges in a Revolut csv file and output a new csv containing the tax information.
 #[derive(Parser)]
@@ -30,19 +31,21 @@ fn main() {
 
     if args.exchanges {
         match currency.as_str() {
-            "ALL" => cryptotax::print_exchanges(&args.path)
-                .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
-                .unwrap(),
-            _ => cryptotax::print_exchanges_in_currency(&args.path, &currency)
-                .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
-                .unwrap(),
+            "ALL" =>
+                block_on(cryptotax::print_exchanges(&args.path))
+                    .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
+                    .unwrap(),
+            _ =>
+                block_on(cryptotax::print_exchanges_in_currency(&args.path, &currency))
+                    .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
+                    .unwrap(),
         }
     } else if args.trades {
-        cryptotax::merge_exchanges(&args.path, &currency)
+        block_on(cryptotax::merge_exchanges(&args.path, &currency))
             .with_context(|| format!("Could not merge exchanges from file `{:?}`", &args.path))
             .unwrap();
     } else {
-        cryptotax::calculate_tax(&args.path, &currency, &base)
+        block_on(cryptotax::calculate_tax(&args.path, &currency, &base))
             .with_context(|| format!("Could not calculate tax from file `{:?}`", &args.path))
             .unwrap();
     }
