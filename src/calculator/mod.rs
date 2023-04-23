@@ -1,55 +1,15 @@
-use crate::trade::{Currency, Trade, Direction, Money};
+mod taxable_trade;
+
 use log::debug;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use serde::ser::SerializeStruct;
-use serde::{Serialize, Serializer};
+use serde::{Serialize};
 use std::fmt::Debug;
 use std::io;
 use std::ops::{Neg, Sub};
+use std::fmt;
+use crate::calculator::taxable_trade::TaxableTrade;
 
-// 1. Bought Crypto 1 from SEK      (cost in SEK),  sold to SEK      (sales in SEK)
-// 2. Bought Crypto 1 from SEK      (cost in SEK),  sold to Crypto 2 (SEK price as sales)
-// 3. Bought from Crypto 2 (SEK price as cost),     sold to Crypto 3 (SEK price as sales)
-// 4. Bought from Crypto 3 (SEK price as cost),     sold to SEK      (sales in SEK)
-#[derive(Debug, PartialEq)]
-pub(crate) struct TaxableTrade {
-    date: String,
-    currency: Currency,             // Valutakod
-    amount: Decimal,                // Antal
-    income: Money,                  // Försäljningspris
-    costs: Vec<Money>,              // Omkostnadsbelopp
-    net_income: Option<Decimal>,    // Vinst/förlust
-}
-
-impl Serialize for TaxableTrade {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: Serializer,
-    {
-        // 6 is the number of fields in the struct.
-        let mut state = serializer.serialize_struct("TaxableTrade", 6)?;
-        state.serialize_field("Date", &self.date)?;
-        state.serialize_field("Currency", &self.currency)?;
-        state.serialize_field("Amount", &self.amount)?;
-        state.serialize_field("Income", &format!("{}", self.income))?;
-        state.serialize_field("Cost", &self.costs_to_string())?;
-        state.serialize_field("Net Income", &self.net_income)?;
-        state.end()
-    }
-}
-
-impl TaxableTrade {
-    fn costs_to_string(&self) -> String {
-        if self.costs.iter().all(|c| c.is_cash()) {
-            self.costs.iter()
-                .fold(dec!(0), |acc, c| acc + c.amount())
-                .to_string()
-        } else {
-            self.costs.iter()
-                .fold("".to_string(), |acc, c| format!("{}, {}", acc, c))
-        }
-    }
-}
 
 #[derive(Debug, PartialEq, Clone)]
 struct Cost {
@@ -148,14 +108,14 @@ impl CostBook {
                 .map(|c| c.exchanged)
                 .collect();
         let net_income = income.to_net_income(&costs);
-        Ok(TaxableTrade {
-            date: transaction.date.clone(),
-            currency: transaction.paid_currency.clone(),
-            amount: transaction.paid_amount,
+        Ok(TaxableTrade::new(
+            transaction.date.clone(),
+            transaction.paid_currency.clone(),
+            transaction.paid_amount,
             income,
             costs,
             net_income
-        })
+        ))
     }
 
     fn find_cash_cost_mut(&mut self, is_vault: bool) -> Option<&mut Cost> {
@@ -264,11 +224,139 @@ pub(crate) async fn tax(trades: &Vec<Trade>, currency: &Currency, base: &Currenc
     Ok(trades)
 }
 
+#[derive(Debug, PartialEq, Serialize)]
+pub(crate) struct Trade {
+    #[serde(rename = "Type")]
+    pub(crate) direction: Direction,
+
+    #[serde(rename = "Paid Currency")]
+    pub(crate) paid_currency: Currency,
+
+    #[serde(rename = "Paid Amount")]
+    pub(crate) paid_amount: Decimal,
+
+    #[serde(rename = "Exchanged Currency")]
+    pub(crate) exchanged_currency: Currency,
+
+    #[serde(rename = "Exchanged Amount")]
+    pub(crate) exchanged_amount: Decimal,
+
+    #[serde(rename = "Date")]
+    pub(crate) date: String,
+
+    #[serde(rename = "Vault")]
+    pub(crate) is_vault: bool,
+}
+
+impl Trade {
+    pub(crate) fn new() -> Trade {
+        Trade {
+            direction: Direction::Buy,
+            paid_currency: "".to_string(),
+            paid_amount: Default::default(),
+            exchanged_currency: "".to_string(),
+            exchanged_amount: Default::default(),
+            date: "".to_string(),
+            is_vault: false
+        }
+    }
+
+    pub(crate) fn to_money(&self, base: &Currency) -> Money {
+        if self.exchanged_currency.eq(base) {
+            Money::new_cash(self.exchanged_currency.clone(), self.exchanged_amount)
+        } else {
+            Money::new_coupon(self.exchanged_currency.clone(), self.exchanged_amount, self.date.clone())
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Serialize)]
+pub(crate) enum Direction {
+    Buy,
+    Sell
+}
+
+pub(crate) type Currency = String;
+
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) enum Money {
+    Cash(Cash),
+    Coupon(Coupon),
+}
+
+impl Money {
+    pub(crate)fn new_cash(currency: Currency, amount: Decimal) -> Money {
+        let cash = Cash{ currency, amount };
+        Money::Cash(cash)
+    }
+
+    pub(crate) fn new_coupon(currency: Currency, amount: Decimal, date: String) -> Money {
+        let coupon = Coupon{ currency, amount, date };
+        Money::Coupon(coupon)
+    }
+
+    pub(crate) fn is_cash(&self) -> bool {
+        match self { Money::Cash(_) => true, Money::Coupon(_) => false }
+    }
+
+    pub(crate) fn amount(&self) -> Decimal {
+        match self {
+            Money::Cash(cash) => cash.amount,
+            Money::Coupon(coupon) => coupon.amount
+        }
+    }
+
+    pub(crate) fn deduct(&mut self, amount: Decimal) -> Money {
+        match self {
+            Money::Cash(cash) => {
+                cash.amount -= amount;
+                Money::new_cash(cash.currency.clone(), amount)
+            },
+            Money::Coupon(coupon) => {
+                coupon.amount -= amount;
+                Money::new_coupon(coupon.currency.clone(), amount, coupon.date.clone())
+            }
+        }
+    }
+
+    pub(crate) fn to_net_income(&self, costs: &Vec<Money>) -> Option<Decimal> {
+        let all_cash = costs.iter().all(|c| c.is_cash());
+        match (self, all_cash) {
+            (Money::Cash(cash), true) => {
+                let cost = costs.iter().fold(dec!(0), |acc, c| acc + c.amount());
+                Some(cash.amount + cost)
+            }
+            _ => None
+        }
+    }
+}
+
+impl fmt::Display for Money {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Money::Cash(cash) => write!(f, "{}", cash.amount),
+            Money::Coupon(coupon) => write!(f, "({} {} {})", coupon.amount, coupon.currency, coupon.date)
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct Cash {
+    pub(crate) currency: Currency,
+    pub(crate) amount: Decimal
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub(crate) struct Coupon {
+    pub(crate) currency: Currency,
+    pub(crate) amount: Decimal,
+    pub(crate) date: String
+}
+
 #[cfg(test)]
 mod test {
-    use crate::calculator::{Cost, CostBook, TaxableTrade};
-    use crate::trade::{Cash, Coupon, Money, Trade, Direction};
     use rust_decimal_macros::dec;
+    use crate::calculator::{Cost, CostBook, TaxableTrade, Trade, Cash, Coupon, Money, Direction};
     use std::error::Error;
 
     #[test]
@@ -387,14 +475,14 @@ mod test {
         /*
          * Then
          */
-        assert_eq!(x, TaxableTrade {
-            date: "2022-05-05 05:01:12".to_string(),
-            currency: "DOGE".to_string(),
-            amount: dec!(-50),
-            income: Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(200.63) }),
-            costs: vec![Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(-105) })],
-            net_income: Some(dec!(95.63))
-        });
+        assert_eq!(x, TaxableTrade::new(
+            "2022-05-05 05:01:12".to_string(),
+            "DOGE".to_string(),
+            dec!(-50),
+            Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(200.63) }),
+            vec![Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(-105) })],
+            Some(dec!(95.63))
+        ));
 
         let trade = Trade {
             direction: Direction::Sell,
@@ -406,14 +494,14 @@ mod test {
             is_vault: false
         };
         let x = book.add_sell(&trade)?;
-        assert_eq!(x, TaxableTrade {
-            date: "2022-07-06 06:02:13".to_string(),
-            currency: "DOGE".to_string(),
-            amount: dec!(-50),
-            income: Money::Coupon(Coupon{ currency: "BTC".to_string(), amount: dec!(0.0000201), date: "2022-07-06 06:02:13".to_string() }),
-            costs: vec![Money::Coupon(Coupon{ currency: "BTC".to_string(), amount: dec!(-0.000000505), date: "2021-03-04 11:31:30".to_string() })],
-            net_income: None
-        });
+        assert_eq!(x, TaxableTrade::new(
+            "2022-07-06 06:02:13".to_string(),
+            "DOGE".to_string(),
+            dec!(-50),
+            Money::Coupon(Coupon{ currency: "BTC".to_string(), amount: dec!(0.0000201), date: "2022-07-06 06:02:13".to_string() }),
+            vec![Money::Coupon(Coupon{ currency: "BTC".to_string(), amount: dec!(-0.000000505), date: "2021-03-04 11:31:30".to_string() })],
+            None
+        ));
 
         let trade = Trade {
             direction: Direction::Sell,
@@ -425,17 +513,17 @@ mod test {
             is_vault: false
         };
         let x = book.add_sell(&trade)?;
-        assert_eq!(x, TaxableTrade {
-            date: "2022-08-07 07:03:14".to_string(),
-            currency: "DOGE".to_string(),
-            amount: dec!(-1250),
-            income: Money::Coupon(Coupon{ currency: "BCH".to_string(), amount: dec!(325), date: "2022-08-07 07:03:14".to_string() }),
-            costs: vec![ Money::Coupon(Coupon{ currency: "BTC".to_string(), amount: dec!(-0.000009595), date: "2021-03-04 11:31:30".to_string() })
+        assert_eq!(x, TaxableTrade::new(
+             "2022-08-07 07:03:14".to_string(),
+             "DOGE".to_string(),
+             dec!(-1250),
+            Money::Coupon(Coupon{ currency: "BCH".to_string(), amount: dec!(325), date: "2022-08-07 07:03:14".to_string() }),
+            vec![ Money::Coupon(Coupon{ currency: "BTC".to_string(), amount: dec!(-0.000009595), date: "2021-03-04 11:31:30".to_string() })
                        , Money::Coupon(Coupon{ currency: "EOS".to_string(), amount: dec!(-500), date: "2021-02-03 10:30:29".to_string() })
                        , Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(-210) })
                        ],
-            net_income: None
-        });
+            None
+        ));
 
         Ok(())
     }
