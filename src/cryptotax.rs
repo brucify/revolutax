@@ -1,4 +1,3 @@
-use crate::reader::row::to_trades;
 use crate::{calculator, reader, writer};
 use log::info;
 use std::path::PathBuf;
@@ -42,7 +41,7 @@ pub async fn merge_exchanges(path: &PathBuf, currency: &String) -> std::io::Resu
     info!("reader::read_exchanges_in_currency done. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let trades =  to_trades(&rows, currency).await?;
+    let trades =  reader::revolut_row::to_trades(&rows, currency).await?;
     info!("reader::to_transactions done. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
@@ -63,7 +62,7 @@ pub async fn calculate_tax(path: &PathBuf, currency: &String, base: &String) -> 
     info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let trades = to_trades(&rows, currency).await?;
+    let trades = reader::revolut_row::to_trades(&rows, currency).await?;
     info!("Done converting to transactions. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();

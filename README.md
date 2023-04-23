@@ -27,6 +27,27 @@ OPTIONS:
                                  to stdout a new csv file
 ```
 
+Build
+-----
+
+    $ cargo build
+
+Usage
+-----
+
+    $ cargo build
+    $ target/debug/cryptotax transactions.csv --currency ETH > eth.csv
+
+Or
+
+    $ cargo run -- transactions_history.csv --currency ETH --base SEK > tax_eth.csv
+    $ cargo run -- transactions_history.csv --currency ETH --exchanges > exchanges_eth.csv
+    $ cargo run -- transactions_history.csv --currency ETH --trades > trades_eth.csv
+
+Optionally, set the environment variable`RUST_LOG` to `info` or `debug` to see more logs.
+
+    $ RUST_LOG=debug cargo run -- transactions_history.csv --currency ETH > eth.csv
+
 Examples
 -----
 
@@ -68,24 +89,3 @@ $ cargo run -- transactions_history.csv --currency ETH --base SEK --trades > tra
 | Buy  | BTC           | 0.00005000  | SEK                | -3               | 2022-05-01 23:30:00 | false |
 | Sell | BTC           | -0.00005000 | SEK                | -3               | 2022-05-01 23:30:00 | false |
 
-
-Build
------
-
-    $ cargo build
-
-Run
------
-
-    $ cargo run -- transactions_history.csv --currency ETH --base SEK > tax_eth.csv
-    $ cargo run -- transactions_history.csv --currency ETH --exchanges > exchanges_eth.csv
-    $ cargo run -- transactions_history.csv --currency ETH --trades > trades_eth.csv
-
-Or
-
-    $ cargo build
-    $ target/debug/cryptotax transactions.csv --currency ETH > eth.csv
-
-Optionally, set the environment variable`RUST_LOG` to `info` or `debug` to see more logs.
-
-    $ RUST_LOG=debug cargo run -- transactions_history.csv --currency ETH > eth.csv

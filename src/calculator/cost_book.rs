@@ -42,32 +42,33 @@ impl CostBook {
             costs: vec![],
         }
     }
-    fn add_buy(&mut self, transaction: &Trade) {
-        match transaction.to_money(&self.base) {
+
+    fn add_buy(&mut self, trade: &Trade) {
+        match trade.to_money(&self.base) {
             Money::Cash(cash) => {
-                self.find_cash_cost_mut(transaction.is_vault).map(|cost|
-                    cost.add_cash(transaction.paid_amount, cash.amount)
+                self.find_cash_cost_mut(trade.is_vault).map(|cost|
+                    cost.add_cash(trade.paid_amount, cash.amount)
                 );
             }
             income @ Money::Coupon(_) => {
-                let coupon_cost = Cost::new(transaction.paid_amount, income, transaction.is_vault);
+                let coupon_cost = Cost::new(trade.paid_amount, income, trade.is_vault);
                 self.costs.push(coupon_cost);
             }
         }
     }
 
-    fn add_sell(&mut self, transaction: &Trade) -> std::io::Result<TaxableTrade> {
-        let income = transaction.to_money(&self.base);
+    fn add_sell(&mut self, trade: &Trade) -> std::io::Result<TaxableTrade> {
+        let income = trade.to_money(&self.base);
         let costs =
-            self.find_and_deduct_cost(&income, transaction.paid_amount)?
+            self.find_and_deduct_cost(&income, trade.paid_amount)?
                 .into_iter()
                 .map(|c| c.exchanged)
                 .collect();
         let net_income = income.to_net_income(&costs);
         Ok(TaxableTrade::new(
-            transaction.date.clone(),
-            transaction.paid_currency.clone(),
-            transaction.paid_amount,
+            trade.date.clone(),
+            trade.paid_currency.clone(),
+            trade.paid_amount,
             income,
             costs,
             net_income
