@@ -1,12 +1,14 @@
 use crate::calculator::Currency;
 use crate::calculator::trade::{Direction, Trade};
-use log::debug;
+use csv::{ReaderBuilder, Trim};
+use log::{debug, info};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use std::ops::Neg;
+use std::path::PathBuf;
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
-pub(crate) struct RevolutRow {
+pub(crate) struct RevolutRow2022 {
     #[serde(rename = "Type")]
     pub(crate) r#type: Type,
 
@@ -66,39 +68,84 @@ pub(crate) enum State {
     Declined,
 }
 
-/// Converts `Vec<Row>` into `Vec<Trade>`, given a target currency.
-pub(crate) async fn to_trades(rows: &Vec<RevolutRow>, currency: &Currency) -> std::io::Result<Vec<Trade>> {
-    let (trades, _): (Vec<Trade>, Option<&RevolutRow>) =
-        rows.iter().rev()
-            .fold((vec![], None), |(mut acc, prev), row| {
-                match row.r#type {
-                    Type::Exchange => {
-                        match prev {
-                            None => (acc, Some(row)),
-                            Some(prev) => {
-                                let trade = prev.to_trade(None, currency);
-                                let trade = row.to_trade(Some(trade), currency);
-                                acc.push(trade);
-                                (acc, None)
-                            }
-                        }
-                    }
-                    Type::CardPayment => {
-                        let trade = row.to_trade(None, currency);
-                        acc.push(trade);
-                        (acc, prev)
-                    }
-                    _ => (acc, prev)
-                }
-            });
-    Ok(trades)
-}
-
 // 1. Bought Crypto 1 from SEK      (cost in SEK),  sold to SEK      (sales in SEK)
 // 2. Bought Crypto 1 from SEK      (cost in SEK),  sold to Crypto 2 (SEK price as sales)
 // 3. Bought from Crypto 2 (SEK price as cost),     sold to Crypto 3 (SEK price as sales)
 // 4. Bought from Crypto 3 (SEK price as cost),     sold to SEK      (sales in SEK)
-impl RevolutRow {
+impl RevolutRow2022 {
+    /// Reads the file from path into a `Vec<Row>`.
+    async fn deserialize_from(path: &PathBuf) -> std::io::Result<Vec<RevolutRow2022>> {
+        let now = std::time::Instant::now();
+        let mut rdr = ReaderBuilder::new()
+            .has_headers(true)
+            // .delimiter(b';')
+            .delimiter(b',')
+            .trim(Trim::All)
+            .from_path(path)?;
+        info!("ReaderBuilder::from_path done. Elapsed: {:.2?}", now.elapsed());
+
+        let now = std::time::Instant::now();
+        let rows: Vec<RevolutRow2022> =
+            rdr.deserialize::<RevolutRow2022>()
+                .filter_map(|record| record.ok())
+                .collect();
+        info!("reader::deserialize done. Elapsed: {:.2?}", now.elapsed());
+
+        Ok(rows)
+    }
+
+    /// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange`.
+    pub(crate) async fn read_exchanges(path: &PathBuf) -> std::io::Result<Vec<RevolutRow2022>> {
+        let rows = Self::deserialize_from(path).await?
+            .into_iter()
+            .filter(|t| t.r#type == Type::Exchange)
+            .collect();
+        Ok(rows)
+    }
+
+    /// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange` in the
+    /// target currency, or  with type `Card Payment` but in the target currency.
+    pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Currency) -> std::io::Result<Vec<RevolutRow2022>> {
+        let rows = Self::deserialize_from(path).await?
+            .into_iter()
+            .filter(|t| {
+                t.r#type == Type::Exchange
+                    || (t.r#type == Type::CardPayment && t.currency.eq(currency))
+            })
+            .filter(|t| t.state == State::Completed)
+            .filter(|t| t.currency.eq(currency) || t.description.contains(currency))// "Exchanged to ETH"
+            .collect();
+        Ok(rows)
+    }
+
+    /// Converts `Vec<Row>` into `Vec<Trade>`, given a target currency.
+    pub(crate) async fn rows_to_trades(rows: &Vec<RevolutRow2022>, currency: &Currency) -> std::io::Result<Vec<Trade>> {
+        let (trades, _): (Vec<Trade>, Option<&RevolutRow2022>) =
+            rows.iter().rev()
+                .fold((vec![], None), |(mut acc, prev), row| {
+                    match row.r#type {
+                        Type::Exchange => {
+                            match prev {
+                                None => (acc, Some(row)),
+                                Some(prev) => {
+                                    let trade = prev.to_trade(None, currency);
+                                    let trade = row.to_trade(Some(trade), currency);
+                                    acc.push(trade);
+                                    (acc, None)
+                                }
+                            }
+                        }
+                        Type::CardPayment => {
+                            let trade = row.to_trade(None, currency);
+                            acc.push(trade);
+                            (acc, prev)
+                        }
+                        _ => (acc, prev)
+                    }
+                });
+        Ok(trades)
+    }
+
     fn to_trade(&self, trade: Option<Trade>, currency: &Currency) -> Trade {
         let mut trade = trade.unwrap_or(Trade::new());
 
@@ -166,8 +213,7 @@ impl RevolutRow {
 #[cfg(test)]
 mod test {
     use crate::calculator::trade::{Direction, Trade};
-    use crate::reader::deserialize_from;
-    use crate::reader::revolut_row::{RevolutRow, State, to_trades, Type};
+    use crate::reader::revolut_row_2022::{RevolutRow2022, State, Type};
     use futures::executor::block_on;
     use rust_decimal_macros::dec;
     use std::error::Error;
@@ -191,13 +237,13 @@ mod test {
         /*
          * When
          */
-        let rows = block_on(deserialize_from(&PathBuf::from(path)))?;
+        let rows = block_on(RevolutRow2022::deserialize_from(&PathBuf::from(path)))?;
 
         /*
          * Then
          */
         let mut iter = rows.into_iter();
-        assert_eq!(iter.next(), Some(RevolutRow {
+        assert_eq!(iter.next(), Some(RevolutRow2022 {
             r#type: Type::Exchange,
             started_date: "2022-03-01 16:21:49".to_string(),
             completed_date: Some("2022-03-01 16:21:49".to_string()),
@@ -212,7 +258,7 @@ mod test {
             state: State::Completed,
             balance: Some(dec!(1078.7290056))
         }));
-        assert_eq!(iter.next(), Some(RevolutRow {
+        assert_eq!(iter.next(), Some(RevolutRow2022 {
             r#type: Type::Exchange,
             started_date: "2022-03-01 16:21:49".to_string(),
             completed_date: Some("2022-03-01 16:21:49".to_string()),
@@ -227,7 +273,7 @@ mod test {
             state: State::Completed,
             balance: Some(dec!(50))
         }));
-        assert_eq!(iter.next(), Some(RevolutRow {
+        assert_eq!(iter.next(), Some(RevolutRow2022 {
             r#type: Type::Exchange,
             started_date: "2021-12-31 17:54:48".to_string(),
             completed_date: Some("2021-12-31 17:54:48".to_string()),
@@ -242,7 +288,7 @@ mod test {
             state: State::Completed,
             balance: Some(dec!(700.27))
         }));
-        assert_eq!(iter.next(), Some(RevolutRow {
+        assert_eq!(iter.next(), Some(RevolutRow2022 {
             r#type: Type::Exchange,
             started_date: "2021-12-31 17:54:48".to_string(),
             completed_date: Some("2021-12-31 17:54:48".to_string()),
@@ -267,7 +313,7 @@ mod test {
          * Given
          */
         let rows = vec![
-            RevolutRow {
+            RevolutRow2022 {
                 r#type: Type::CardPayment,
                 started_date: "2022-04-02 17:22:50".to_string(),
                 completed_date: Some("2022-04-02 17:22:50".to_string()),
@@ -282,7 +328,7 @@ mod test {
                 state: State::Completed,
                 balance: Some(dec!(9876.123345))
             },
-            RevolutRow {
+            RevolutRow2022 {
                 r#type: Type::Exchange,
                 started_date: "2022-03-01 16:21:49".to_string(),
                 completed_date: Some("2022-03-01 16:21:49".to_string()),
@@ -297,7 +343,7 @@ mod test {
                 state: State::Completed,
                 balance: Some(dec!(1078.7290056))
             },
-            RevolutRow {
+            RevolutRow2022 {
                 r#type: Type::Exchange,
                 started_date: "2022-03-01 16:21:49".to_string(),
                 completed_date: Some("2022-03-01 16:21:49".to_string()),
@@ -312,7 +358,7 @@ mod test {
                 state: State::Completed,
                 balance: Some(dec!(50))
             },
-            RevolutRow {
+            RevolutRow2022 {
                 r#type: Type::Exchange,
                 started_date: "2021-12-31 17:54:48".to_string(),
                 completed_date: Some("2021-12-31 17:54:48".to_string()),
@@ -327,7 +373,7 @@ mod test {
                 state: State::Completed,
                 balance: Some(dec!(700.27))
             },
-            RevolutRow {
+            RevolutRow2022 {
                 r#type: Type::Exchange,
                 started_date: "2021-12-31 17:54:48".to_string(),
                 completed_date: Some("2021-12-31 17:54:48".to_string()),
@@ -342,7 +388,7 @@ mod test {
                 state: State::Completed,
                 balance: Some(dec!(2000))
             },
-            RevolutRow {
+            RevolutRow2022 {
                 r#type: Type::Exchange,
                 started_date: "2021-11-11 18:03:13".to_string(),
                 completed_date: Some("2021-11-11 18:03:13".to_string()),
@@ -357,7 +403,7 @@ mod test {
                 state: State::Completed,
                 balance: Some(dec!(500))
             },
-            RevolutRow {
+            RevolutRow2022 {
                 r#type: Type::Exchange,
                 started_date: "2021-11-11 18:03:13".to_string(),
                 completed_date: Some("2021-11-11 18:03:13".to_string()),
@@ -372,7 +418,7 @@ mod test {
                 state: State::Completed,
                 balance: Some(dec!(139.94))
             },
-            RevolutRow {
+            RevolutRow2022 {
                 r#type: Type::Exchange,
                 started_date: "2021-11-10 17:03:13".to_string(),
                 completed_date: Some("2021-11-10 17:03:13".to_string()),
@@ -387,7 +433,7 @@ mod test {
                 state: State::Completed,
                 balance: Some(dec!(0))
             },
-            RevolutRow {
+            RevolutRow2022 {
                 r#type: Type::Exchange,
                 started_date: "2021-11-10 17:03:13".to_string(),
                 completed_date: Some("2021-11-10 17:03:13".to_string()),
@@ -406,7 +452,7 @@ mod test {
         /*
          * When
          */
-        let trades = block_on(to_trades(&rows, &"DOGE".to_string()))?;
+        let trades = block_on(RevolutRow2022::rows_to_trades(&rows, &"DOGE".to_string()))?;
 
         /*
         * Then
