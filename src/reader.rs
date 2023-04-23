@@ -1,4 +1,4 @@
-use crate::trade::{Currency, Trade, Direction};
+use crate::calculator::{Currency, Trade, Direction};
 use csv::{ReaderBuilder, Trim};
 use log::{debug, info};
 use rust_decimal::prelude::*;
