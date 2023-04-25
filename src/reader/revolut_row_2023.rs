@@ -1,9 +1,10 @@
 use crate::calculator::Currency;
 use crate::calculator::trade::{Direction, Trade};
 use csv::{ReaderBuilder, Trim};
-use log::{debug, info};
+use log::info;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::io::Result;
 use std::ops::Neg;
 use std::path::PathBuf;
 
@@ -13,7 +14,7 @@ pub(crate) struct RevolutRow2023 {
     pub(crate) r#type: Type,
 
     #[serde(rename = "Product")]
-    product: String,
+    product: Product,
 
     #[serde(rename = "Started Date")]
     started_date: String,
@@ -30,14 +31,17 @@ pub(crate) struct RevolutRow2023 {
     #[serde(rename = "Currency")]
     pub(crate) currency: Currency,
 
-    #[serde(rename = "Original Amount")]
-    original_amount: Decimal,
+    #[serde(rename = "Fiat amount")]
+    fiat_amount: Decimal,
 
-    #[serde(rename = "Original Currency")]
-    original_currency: Currency,
+    #[serde(rename = "Fiat amount (inc. fees)")]
+    fiat_amount_inc_fees: Decimal,
 
     #[serde(rename = "Fee")]
     fee: Decimal,
+
+    #[serde(rename = "Base currency")]
+    base_currency: Currency,
 
     #[serde(rename = "State")]
     pub(crate) state: State,
@@ -65,13 +69,15 @@ pub(crate) enum State {
     Declined,
 }
 
-// 1. Bought Crypto 1 from SEK      (cost in SEK),  sold to SEK      (sales in SEK)
-// 2. Bought Crypto 1 from SEK      (cost in SEK),  sold to Crypto 2 (SEK price as sales)
-// 3. Bought from Crypto 2 (SEK price as cost),     sold to Crypto 3 (SEK price as sales)
-// 4. Bought from Crypto 3 (SEK price as cost),     sold to SEK      (sales in SEK)
+#[derive(Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "PascalCase")]
+pub(crate) enum Product {
+    Current,
+    Savings,
+}
+
 impl RevolutRow2023 {
-    /// Reads the file from path into a `Vec<Row>`.
-    async fn deserialize_from(path: &PathBuf) -> std::io::Result<Vec<RevolutRow2023>> {
+    async fn deserialize_from(path: &PathBuf) -> Result<Vec<RevolutRow2023>> {
         let now = std::time::Instant::now();
         let mut rdr = ReaderBuilder::new()
             .has_headers(true)
@@ -82,134 +88,64 @@ impl RevolutRow2023 {
         info!("ReaderBuilder::from_path done. Elapsed: {:.2?}", now.elapsed());
 
         let now = std::time::Instant::now();
-        let rows: Vec<RevolutRow2023> =
+        let mut rows: Vec<RevolutRow2023> =
             rdr.deserialize::<RevolutRow2023>()
                 .filter_map(|record| record.ok())
                 .collect();
         info!("reader::deserialize done. Elapsed: {:.2?}", now.elapsed());
 
+        // 2023 Revolut csv is sorted first by Product (Current/Savings), then by date
+        rows.sort_unstable_by(|a,b| a.completed_date.cmp(&b.completed_date));
+        
         Ok(rows)
     }
 
-    /// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange`.
-    pub(crate) async fn read_exchanges(path: &PathBuf) -> std::io::Result<Vec<RevolutRow2023>> {
-        let rows = Self::deserialize_from(path).await?
-            .into_iter()
-            .filter(|t| t.r#type == Type::Exchange)
-            .collect();
-        Ok(rows)
-    }
-
-    /// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange` in the
-    /// target currency, or  with type `Card Payment` but in the target currency.
-    pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Currency) -> std::io::Result<Vec<RevolutRow2023>> {
-        let rows = Self::deserialize_from(path).await?
-            .into_iter()
-            .filter(|t| {
-                t.r#type == Type::Exchange
-                    || (t.r#type == Type::CardPayment && t.currency.eq(currency))
-            })
-            .filter(|t| t.state == State::Completed)
-            .filter(|t| t.currency.eq(currency) || t.description.contains(currency))// "Exchanged to ETH"
-            .collect();
-        Ok(rows)
-    }
-
-    /// Converts `Vec<Row>` into `Vec<Trade>`, given a target currency.
-    pub(crate) async fn rows_to_trades(rows: &Vec<RevolutRow2023>, currency: &Currency) -> std::io::Result<Vec<Trade>> {
-        let (trades, _): (Vec<Trade>, Option<&RevolutRow2023>) =
-            rows.iter().rev()
-                .fold((vec![], None), |(mut acc, prev), row| {
+    pub(crate) async fn rows_to_trades(rows: &Vec<RevolutRow2023>) -> Result<Vec<Trade>> {
+        let trades: Vec<Trade> =
+            rows.iter()
+                .fold(vec![], |mut acc, row| {
                     match row.r#type {
-                        Type::Exchange => {
-                            match prev {
-                                None => (acc, Some(row)),
-                                Some(prev) => {
-                                    let trade = prev.to_trade(None, currency);
-                                    let trade = row.to_trade(Some(trade), currency);
-                                    acc.push(trade);
-                                    (acc, None)
-                                }
-                            }
+                        Type::Exchange | Type::CardPayment => {
+                            row.to_trade()
+                                .map(|trade|
+                                    acc.push(trade)
+                                );
+                            acc
                         }
-                        Type::CardPayment => {
-                            let trade = row.to_trade(None, currency);
-                            acc.push(trade);
-                            (acc, prev)
-                        }
-                        _ => (acc, prev)
+                        _ => acc
                     }
                 });
         Ok(trades)
     }
 
-    fn to_trade(&self, trade: Option<Trade>, currency: &Currency) -> Trade {
-        let mut trade = trade.unwrap_or(Trade::new());
+    fn to_trade(&self) -> Option<Trade> {
+        let mut trade = Trade::new();
 
-        match self.r#type {
-            Type::Exchange => self.exchange_to_trade(&mut trade, currency),
-            Type::CardPayment => self.card_payment_to_trade(&mut trade, currency),
-            _ => {}
-        }
-
-        trade
-    }
-
-    fn exchange_to_trade(&self, trade: &mut Trade, currency: &Currency) {
-        // target currency: "BCH", currency: "BCH", description: "Exchanged from SEK"
-        // if self.currency.eq(currency) && self.description.contains("Exchanged from") {
-        if self.currency.eq(currency) && self.amount.is_sign_positive() {
-            debug!("{:?}: Bought +{:?} of {:?} ({:?}), incl. fee {:?}", self.started_date, self.amount+self.fee, self.currency, self.description, self.fee);
+        if self.amount.is_sign_positive() {
             trade.direction = Direction::Buy;
-            trade.paid_amount = self.amount + self.fee;
-            trade.paid_currency = currency.clone();
-            trade.date = self.started_date.clone();
+        } else  {
+            trade.direction = Direction::Sell;
+        }
 
-        }
-        // target currency: "BCH", currency: "BCH", description: "Exchanged to SEK"
-        // if self.currency.eq(currency) && self.description.contains("Exchanged to") {
-        if self.currency.eq(currency) && self.amount.is_sign_negative() {
-            debug!("{:?}: Sold {:?} of {:?} ({:?}), incl. fee {:?}", self.started_date, self.amount+self.fee, self.currency, self.description, self.fee);
-            trade.direction = Direction::Sell;
-            trade.paid_amount = self.amount + self.fee;
-            trade.paid_currency = currency.clone();
-            trade.date = self.started_date.clone();
-        }
-        // target currency: "BCH", currency: "SEK", description: "Exchanged from BCH"
-        if self.description.contains("Exchanged from") && self.description.contains(currency) {
-            debug!("{:?}: Income of selling is the price of {:?} of {:?} in SEK ({:?}), incl. fee {:?}", self.started_date, self.amount+self.fee, self.currency, self.description, self.fee);
-            trade.direction = Direction::Sell;
-            trade.exchanged_amount = self.amount + self.fee;
-            trade.exchanged_currency = self.currency.clone();
-        }
-        // target currency: "BCH", currency: "SEK", description: "Exchanged to BCH"
-        if self.description.contains("Exchanged to") && self.description.contains(currency) {
-            debug!("{:?}: Cost of buying is the price of {:?} of {:?} in SEK ({:?}), incl. fee {:?}", self.started_date, self.amount+self.fee, self.currency, self.description, self.fee);
-            trade.direction = Direction::Buy;
-            trade.exchanged_amount = self.amount + self.fee;
-            trade.exchanged_currency = self.currency.clone();
-        }
-        if self.description.contains("Vault") {
+        trade.date = self.started_date.clone();
+        trade.paid_amount = self.amount;
+        trade.paid_currency  = self.currency.clone();
+        trade.exchanged_amount = self.fiat_amount_inc_fees.neg();
+        trade.exchanged_currency = self.base_currency.clone();
+
+        if self.product.eq(&Product::Savings) {
             trade.is_vault = true;
         }
-    }
 
-    fn card_payment_to_trade(&self, trade: &mut Trade, currency: &Currency) {
-        // amount: -0.00123456, fee: 0.00000000, currency: "BTC", original_amount: -543.21, original_currency: "SEK",
-        trade.direction = Direction::Sell;
-        trade.paid_amount = self.amount + self.fee;
-        trade.paid_currency = currency.clone();
-        trade.exchanged_amount = self.original_amount.neg();
-        trade.exchanged_currency = self.original_currency.clone();
-        trade.date = self.started_date.clone();
-        trade.is_vault = false;
+        Some(trade)
     }
 }
 
 #[cfg(test)]
 mod test {
     use crate::calculator::trade::{Direction, Trade};
-    use crate::reader::revolut_row_2023::{RevolutRow2023, State, Type};
+    use crate::calculator::{Money, taxable_trades, TaxableTrade};
+    use crate::reader::revolut_row_2023::{Product, RevolutRow2023, State, Type};
     use futures::executor::block_on;
     use rust_decimal_macros::dec;
     use std::error::Error;
@@ -223,269 +159,102 @@ mod test {
          * Given
          */
         let mut file = NamedTempFile::new()?;
-        writeln!(file, "Type,Product,Started Date,Completed Date,Description,Amount,Fee,Currency,Original Amount,Original Currency,State,Balance
-                        EXCHANGE,Current,2022-03-01 16:21:49,2022-03-01 16:21:49,Exchanged to EOS,-900.90603463,-20.36495977,DOGE,-900.90603463,DOGE,COMPLETED,1078.7290056
-                        EXCHANGE,Current,2022-03-01 16:21:49,2022-03-01 16:21:49,Exchanged from DOGE,50,0,EOS,50,EOS,COMPLETED,50
-                        EXCHANGE,Current,2021-12-31 17:54:48,2021-12-31 17:54:48,Exchanged to DOGE,-5000.45,-80.15,SEK,-5000.45,SEK,COMPLETED,700.27
-                        EXCHANGE,Current,2021-12-31 17:54:48,2021-12-31 17:54:48,Exchanged from SEK,2000,0,DOGE,2000,DOGE,COMPLETED,2000")?;
+        // Current: Buy 30, Sell 30 (Trade 1), Buy 50, Transfer out 10, Transfer in 100, Sell 50 (Trade 2), Spend 25 (Trade 3) - Balance 65
+        // Savings: Transfer in 10, Buy 20, Buy 40, Buy 60, Buy 80, Transfer out 100 - Balance 110
+        writeln!(file, "
+            Type,Product,Started Date,Completed Date,Description,Amount,Currency,Fiat amount,Fiat amount (inc. fees),Fee,Base currency,State,Balance
+            EXCHANGE,Current,2023-01-01 10:00:00,2023-01-01 10:00:00,Exchanged to EOS,30.0000,EOS,600.00,609.15,9.15,SEK,COMPLETED,30.0000
+            EXCHANGE,Current,2023-01-02 10:00:00,2023-01-02 10:00:00,Exchanged to SEK,-30.0000,EOS,-400.00,-394.86,5.14,SEK,COMPLETED,0.0000
+            EXCHANGE,Current,2023-02-01 12:00:00,2023-02-01 12:00:00,Exchanged to EOS,50.0000,EOS,1000.00,1009.65,9.65,SEK,COMPLETED,50.0000
+            TRANSFER,Current,2023-02-08 10:00:00,2023-02-08 10:00:00,Transferred to Savings,-10.0000,EOS,-200.00,-200.00,0.00,SEK,COMPLETED,40.0000
+            TRANSFER,Current,2023-04-04 10:00:00,2023-04-04 10:00:00,Transferred to Current,100.0000,EOS,2000.00,2000.00,0.00,SEK,COMPLETED,140.0000
+            EXCHANGE,Current,2023-04-04 11:00:00,2023-04-04 11:00:00,Exchanged to SEK,-50.0000,EOS,-600.00,-594.86,5.14,SEK,COMPLETED,90.0000
+            CARD_PAYMENT,Current,2023-05-06 10:00:00,2023-05-06 10:00:00,Payment to Amazon,-25.0000,EOS,-500.00,-495.75,4.25,SEK,COMPLETED,65.0000
+            TRANSFER,Savings,2023-02-08 10:00:00,2023-02-08 10:00:00,Transferred from Current,10.0000,EOS,200.00,200.00,0.00,SEK,COMPLETED,10.0000
+            EXCHANGE,Savings,2023-03-01 14:00:00,2023-03-01 14:00:00,Exchanged to EOS,20.0000,EOS,400.00,404.57,4.57,SEK,COMPLETED,30.0000
+            EXCHANGE,Savings,2023-03-02 14:00:00,2023-03-02 14:00:00,Exchanged to EOS,40.0000,EOS,800.00,809.15,9.15,SEK,COMPLETED,70.0000
+            EXCHANGE,Savings,2023-03-03 14:00:00,2023-03-03 14:00:00,Exchanged to EOS,60.0000,EOS,1200.00,1213.73,13.73,SEK,COMPLETED,130.0000
+            EXCHANGE,Savings,2023-03-04 14:00:00,2023-03-04 14:00:00,Exchanged to EOS,80.0000,EOS,1600.00,1618.31,18.31,SEK,COMPLETED,210.0000
+            TRANSFER,Savings,2023-04-04 10:00:00,2023-04-04 10:00:00,Transferred to Current,-100.0000,EOS,-2000.00,-2000.00,0.00,SEK,COMPLETED,110.0000
+        ")?;
         let path = file.path().to_str().unwrap();
 
         /*
          * When
          */
-        let rows = block_on(RevolutRow2023::deserialize_from(&PathBuf::from(path)))?;
+        let trades = block_on(async {
+            let rows = RevolutRow2023::deserialize_from(&PathBuf::from(path)).await?;
+            RevolutRow2023::rows_to_trades(&rows).await
+        })?;
 
         /*
          * Then
          */
-        let mut iter = rows.into_iter();
-        assert_eq!(iter.next(), Some(RevolutRow2023 {
-            r#type: Type::Exchange,
-            product: "Current".to_string(),
-            started_date: "2022-03-01 16:21:49".to_string(),
-            completed_date: Some("2022-03-01 16:21:49".to_string()),
-            description: "Exchanged to EOS".to_string(),
-            amount: dec!(-900.90603463),
-            fee: dec!(-20.36495977),
-            currency: "DOGE".to_string(),
-            original_amount: dec!(-900.90603463),
-            original_currency: "DOGE".to_string(),
-            state: State::Completed,
-            balance: Some(dec!(1078.7290056))
+        let mut iter = trades.iter();
+        assert_eq!(iter.next(), Some(&Trade {
+            direction: Direction::Buy,
+            paid_currency: "EOS".to_string(),
+            paid_amount: dec!(30),
+            exchanged_currency: "SEK".to_string(),
+            exchanged_amount: dec!(-609.15),
+            date: "2023-01-01 10:00:00".to_string(),
+            is_vault: false
         }));
-        assert_eq!(iter.next(), Some(RevolutRow2023 {
-            r#type: Type::Exchange,
-            product: "Current".to_string(),
-            started_date: "2022-03-01 16:21:49".to_string(),
-            completed_date: Some("2022-03-01 16:21:49".to_string()),
-            description: "Exchanged from DOGE".to_string(),
-            amount: dec!(50),
-            fee: dec!(0),
-            currency: "EOS".to_string(),
-            original_amount: dec!(50),
-            original_currency: "EOS".to_string(),
-            state: State::Completed,
-            balance: Some(dec!(50))
+        assert_eq!(iter.next(), Some(&Trade {
+            direction: Direction::Sell,
+            paid_currency: "EOS".to_string(),
+            paid_amount: dec!(-30),
+            exchanged_currency: "SEK".to_string(),
+            exchanged_amount: dec!(394.86),
+            date: "2023-01-02 10:00:00".to_string(),
+            is_vault: false
         }));
-        assert_eq!(iter.next(), Some(RevolutRow2023 {
-            r#type: Type::Exchange,
-            product: "Current".to_string(),
-            started_date: "2021-12-31 17:54:48".to_string(),
-            completed_date: Some("2021-12-31 17:54:48".to_string()),
-            description: "Exchanged to DOGE".to_string(),
-            amount: dec!(-5000.45),
-            fee: dec!(-80.15),
-            currency: "SEK".to_string(),
-            original_amount: dec!(-5000.45),
-            original_currency: "SEK".to_string(),
-            state: State::Completed,
-            balance: Some(dec!(700.27))
+        assert_eq!(iter.next(), Some(&Trade {
+            direction: Direction::Buy,
+            paid_currency: "EOS".to_string(),
+            paid_amount: dec!(50),
+            exchanged_currency: "SEK".to_string(),
+            exchanged_amount: dec!(-1009.65),
+            date: "2023-02-01 12:00:00".to_string(),
+            is_vault: false
         }));
-        assert_eq!(iter.next(), Some(RevolutRow2023 {
-            r#type: Type::Exchange,
-            product: "Current".to_string(),
-            started_date: "2021-12-31 17:54:48".to_string(),
-            completed_date: Some("2021-12-31 17:54:48".to_string()),
-            description: "Exchanged from SEK".to_string(),
-            amount: dec!(2000),
-            fee: dec!(0),
-            currency: "DOGE".to_string(),
-            original_amount: dec!(2000),
-            original_currency: "DOGE".to_string(),
-            state: State::Completed,
-            balance: Some(dec!(2000))
-        }));
-        assert_eq!(iter.next(), None);
-        Ok(())
-    }
+        // assert_eq!(iter.next(), None);
 
-    #[test]
-    fn should_parse_trades_from_rows() -> Result<(), Box<dyn Error>> {
-        /*
-         * Given
-         */
-        let rows = vec![
-            RevolutRow2023 {
-                r#type: Type::CardPayment,
-                product: "Current".to_string(),
-                started_date: "2022-04-02 17:22:50".to_string(),
-                completed_date: Some("2022-04-02 17:22:50".to_string()),
-                description: "Klarna".to_string(),
-                amount: dec!(-123.45678901),
-                fee: dec!(0.00000000),
-                currency: "DOGE".to_string(),
-                original_amount: dec!(-321.23456789),
-                original_currency: "SEK".to_string(),
-                state: State::Completed,
-                balance: Some(dec!(9876.123345))
-            },
-            RevolutRow2023 {
-                r#type: Type::Exchange,
-                product: "Current".to_string(),
-                started_date: "2022-03-01 16:21:49".to_string(),
-                completed_date: Some("2022-03-01 16:21:49".to_string()),
-                description: "Exchanged to EOS".to_string(),
-                amount: dec!(-900.90603463),
-                fee: dec!(-20.36495977),
-                currency: "DOGE".to_string(),
-                original_amount: dec!(-900.90603463),
-                original_currency: "DOGE".to_string(),
-                state: State::Completed,
-                balance: Some(dec!(1078.7290056))
-            },
-            RevolutRow2023 {
-                r#type: Type::Exchange,
-                product: "Current".to_string(),
-                started_date: "2022-03-01 16:21:49".to_string(),
-                completed_date: Some("2022-03-01 16:21:49".to_string()),
-                description: "Exchanged from DOGE".to_string(),
-                amount: dec!(50),
-                fee: dec!(0),
-                currency: "EOS".to_string(),
-                original_amount: dec!(50),
-                original_currency: "EOS".to_string(),
-                state: State::Completed,
-                balance: Some(dec!(50))
-            },
-            RevolutRow2023 {
-                r#type: Type::Exchange,
-                product: "Current".to_string(),
-                started_date: "2021-12-31 17:54:48".to_string(),
-                completed_date: Some("2021-12-31 17:54:48".to_string()),
-                description: "Exchanged to DOGE".to_string(),
-                amount: dec!(-5000.45),
-                fee: dec!(-80.15),
-                currency: "SEK".to_string(),
-                original_amount: dec!(-5000.45),
-                original_currency: "SEK".to_string(),
-                state: State::Completed,
-                balance: Some(dec!(700.27))
-            },
-            RevolutRow2023 {
-                r#type: Type::Exchange,
-                product: "Current".to_string(),
-                started_date: "2021-12-31 17:54:48".to_string(),
-                completed_date: Some("2021-12-31 17:54:48".to_string()),
-                description: "Exchanged from SEK".to_string(),
-                amount: dec!(2000),
-                fee: dec!(0),
-                currency: "DOGE".to_string(),
-                original_amount: dec!(2000),
-                original_currency: "DOGE".to_string(),
-                state: State::Completed,
-                balance: Some(dec!(2000))
-            },
-            RevolutRow2023 {
-                r#type: Type::Exchange,
-                product: "Current".to_string(),
-                started_date: "2021-11-11 18:03:13".to_string(),
-                completed_date: Some("2021-11-11 18:03:13".to_string()),
-                description: "Exchanged to DOGE DOGE Vault".to_string(),
-                amount: dec!(-20),
-                fee: dec!(0),
-                currency: "SEK".to_string(),
-                original_amount: dec!(-20),
-                original_currency: "SEK".to_string(),
-                state: State::Completed,
-                balance: Some(dec!(500))
-            },
-            RevolutRow2023 {
-                r#type: Type::Exchange,
-                product: "Current".to_string(),
-                started_date: "2021-11-11 18:03:13".to_string(),
-                completed_date: Some("2021-11-11 18:03:13".to_string()),
-                description: "Exchanged from SEK".to_string(),
-                amount: dec!(40),
-                fee: dec!(-0.06),
-                currency: "DOGE".to_string(),
-                original_amount: dec!(40),
-                original_currency: "DOGE".to_string(),
-                state: State::Completed,
-                balance: Some(dec!(139.94))
-            },
-            RevolutRow2023 {
-                r#type: Type::Exchange,
-                product: "Savings".to_string(),
-                started_date: "2021-11-10 17:03:13".to_string(),
-                completed_date: Some("2021-11-10 17:03:13".to_string()),
-                description: "Exchanged to DOGE DOGE Vault".to_string(),
-                amount: dec!(-300),
-                fee: dec!(0),
-                currency: "SEK".to_string(),
-                original_amount: dec!(-300),
-                original_currency: "SEK".to_string(),
-                state: State::Completed,
-                balance: Some(dec!(0))
-            },
-            RevolutRow2023 {
-                r#type: Type::Exchange,
-                product: "Savings".to_string(),
-                started_date: "2021-11-10 17:03:13".to_string(),
-                completed_date: Some("2021-11-10 17:03:13".to_string()),
-                description: "".to_string(),
-                amount: dec!(3),
-                fee: dec!(-0.06),
-                currency: "DOGE".to_string(),
-                original_amount: dec!(3),
-                original_currency: "DOGE".to_string(),
-                state: State::Completed,
-                balance: Some(dec!(200))
-            }
-        ];
         /*
          * When
          */
-        let trades = block_on(RevolutRow2023::rows_to_trades(&rows, &"DOGE".to_string()))?;
+        let taxable_trades = block_on(
+            taxable_trades(&trades, &"EOS".to_string(), &"SEK".to_string())
+        )?;
 
         /*
-        * Then
-        */
-        let mut iter = trades.into_iter();
-        assert_eq!(iter.next(), Some(Trade {
-            direction: Direction::Buy,
-            paid_currency: "DOGE".to_string(),
-            paid_amount: dec!(2.94),
-            exchanged_currency: "SEK".to_string(),
-            exchanged_amount: dec!(-300),
-            date: "2021-11-10 17:03:13".to_string(),
-            is_vault: true
-        }));
-        assert_eq!(iter.next(), Some(Trade {
-            direction: Direction::Buy,
-            paid_currency: "DOGE".to_string(),
-            paid_amount: dec!(39.94),
-            exchanged_currency: "SEK".to_string(),
-            exchanged_amount: dec!(-20),
-            date: "2021-11-11 18:03:13".to_string(),
-            is_vault: true
-        }));
-        assert_eq!(iter.next(), Some(Trade {
-            direction: Direction::Buy,
-            paid_currency: "DOGE".to_string(),
-            paid_amount: dec!(2000),
-            exchanged_currency: "SEK".to_string(),
-            exchanged_amount: dec!(-5080.60),
-            date: "2021-12-31 17:54:48".to_string(),
-            is_vault: false
-        }));
-        assert_eq!(iter.next(), Some(Trade {
-            direction: Direction::Sell,
-            paid_currency: "DOGE".to_string(),
-            paid_amount: dec!(-921.27099440),
-            exchanged_currency: "EOS".to_string(),
-            exchanged_amount: dec!(50),
-            date: "2022-03-01 16:21:49".to_string(),
-            is_vault: false
-        }));
-        assert_eq!(iter.next(), Some(Trade {
-            direction: Direction::Sell,
-            paid_currency: "DOGE".to_string(),
-            paid_amount: dec!(-123.45678901),
-            exchanged_currency: "SEK".to_string(),
-            exchanged_amount: dec!(321.23456789),
-            date: "2022-04-02 17:22:50".to_string(),
-            is_vault: false
-        }));
+         * Then
+         */
+        let mut iter = taxable_trades.into_iter();
+        assert_eq!(iter.next(), Some(TaxableTrade::new(
+            "2023-01-02 10:00:00".to_string(),
+            "EOS".to_string(),
+                dec!(-30),
+            Money::new_cash("SEK".to_string(), dec!(394.86)),
+            vec![Money::new_cash("SEK".to_string(), dec!(-609.15))],
+            Some(dec!(-214.29))
+        )));
+        assert_eq!(iter.next(), Some(TaxableTrade::new(
+            "2023-04-04 11:00:00".to_string(),
+            "EOS".to_string(),
+            dec!(-50),
+            Money::new_cash("SEK".to_string(), dec!(594.86)),
+            vec![Money::new_cash("SEK".to_string(), dec!(-1009.65))],
+            Some(dec!(-414.79))
+        )));
+        assert_eq!(iter.next(), Some(TaxableTrade::new(
+            "2023-05-06 10:00:00".to_string(),
+            "EOS".to_string(),
+            dec!(-25),
+            Money::new_cash("SEK".to_string(), dec!(495.75)),
+            vec![Money::new_cash("SEK".to_string(), dec!(-505.72))],
+            Some(dec!(-9.97))
+        )));
         assert_eq!(iter.next(), None);
 
         Ok(())

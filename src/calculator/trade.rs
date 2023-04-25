@@ -8,12 +8,14 @@ pub(crate) struct Trade {
     #[serde(rename = "Type")]
     pub(crate) direction: Direction,
 
+    // Exchange fiat "SEK" in order to get paid in crypto "BTC"
     #[serde(rename = "Paid Currency")]
     pub(crate) paid_currency: Currency,
 
     #[serde(rename = "Paid Amount")]
     pub(crate) paid_amount: Decimal,
 
+    // Exchange fiat "SEK" in order to get paid in crypto "BTC"
     #[serde(rename = "Exchanged Currency")]
     pub(crate) exchanged_currency: Currency,
 

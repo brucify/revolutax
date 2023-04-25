@@ -5,9 +5,10 @@ use crate::calculator::trade::{Direction, Trade};
 use log::debug;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
+use std::io::Result;
 use std::ops::{Neg, Sub};
 
-pub(crate) async fn tax(trades: &Vec<Trade>, currency: &Currency, base: &Currency) -> std::io::Result<Vec<TaxableTrade>> {
+pub(crate) async fn taxable_trades(trades: &Vec<Trade>, currency: &Currency, base: &Currency) -> Result<Vec<TaxableTrade>> {
     let book = CostBook::new(currency.clone(), base.clone());
     let (trades, b) =
         trades.iter().fold((vec![], book), |(mut acc, mut book), t| {
@@ -50,37 +51,51 @@ impl CostBook {
                     cost.add_cash(trade.paid_amount, cash.amount)
                 );
             }
-            income @ Money::Coupon(_) => {
-                let coupon_cost = Cost::new(trade.paid_amount, income, trade.is_vault);
-                self.costs.push(coupon_cost);
+            cost @ Money::Coupon(_) => {
+                self.costs.push(
+                    Cost::new(
+                        trade.paid_amount,
+                        cost,
+                        trade.is_vault
+                    )
+                );
             }
         }
     }
 
-    fn add_sell(&mut self, trade: &Trade) -> std::io::Result<TaxableTrade> {
+    fn add_sell(&mut self, trade: &Trade) -> Result<TaxableTrade> {
         let income = trade.to_money(&self.base);
+
         let costs =
             self.find_and_deduct_cost(&income, trade.paid_amount)?
                 .into_iter()
                 .map(|c| c.exchanged)
                 .collect();
+
         let net_income = income.to_net_income(&costs);
-        Ok(TaxableTrade::new(
-            trade.date.clone(),
-            trade.paid_currency.clone(),
-            trade.paid_amount,
-            income,
-            costs,
-            net_income
-        ))
+        
+        Ok(
+            TaxableTrade::new(
+                trade.date.clone(),
+                trade.paid_currency.clone(),
+                trade.paid_amount,
+                income,
+                costs,
+                net_income
+            )
+        )
     }
 
     fn find_cash_cost_mut(&mut self, is_vault: bool) -> Option<&mut Cost> {
         match self.costs.iter().find(|c| c.exchanged.is_cash() && c.is_vault == is_vault) {
             None => {
-                let cash = Money::new_cash(self.base.clone(), Default::default());
-                let cash_cost = Cost::new(Default::default(), cash, is_vault);
-                self.costs.push(cash_cost);
+                self.costs.push(
+                    Cost::new(
+                        Default::default(),
+                        Money::new_cash(self.base.clone(), Default::default()),
+                        is_vault
+                    )
+                );
                 self.costs.last_mut()
             }
             Some(_) => {
@@ -94,7 +109,7 @@ impl CostBook {
     /// Likewise, if `income` is `Money::Coupon`, try deduct from the coupons in the `CostBook`.
     /// Only start deducting from the vault if there are no non-vault costs to deduct.
     /// Returns a `Vec<Cost>` which is a list of deducted costs.
-    fn find_and_deduct_cost(&mut self, income: &Money, paid_amount: Decimal) -> std::io::Result<Vec<Cost>> {
+    fn find_and_deduct_cost(&mut self, income: &Money, paid_amount: Decimal) -> Result<Vec<Cost>> {
         let mut ddr = Deductor::new(&mut self.costs, paid_amount);
         let deducted =
             match income {
@@ -194,7 +209,7 @@ impl<'a> Deductor<'a>
     }
 
     /// Use the given closure to deduct costs from `self.costs`
-    fn deduct<T>(&mut self, deduct: T) -> &mut Deductor<'a>
+    fn deduct<T>(&mut self, deduct_fun: T) -> &mut Deductor<'a>
         where T: Fn(&mut Cost, Decimal) -> Option<Cost>
     {
         if !self.remaining.eq(&dec!(0)) {
@@ -202,7 +217,7 @@ impl<'a> Deductor<'a>
                 if remaining.eq(&dec!(0)) { (remaining, acc) } else {
                     let amount = remaining.max(cost.paid_amount.neg());
 
-                    match deduct(cost, amount) {
+                    match deduct_fun(cost, amount) {
                         None => (remaining, acc),
                         Some(cost) => {
                             acc.push(cost);

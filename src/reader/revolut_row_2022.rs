@@ -4,6 +4,7 @@ use csv::{ReaderBuilder, Trim};
 use log::{debug, info};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::io::Result;
 use std::ops::Neg;
 use std::path::PathBuf;
 
@@ -74,7 +75,7 @@ pub(crate) enum State {
 // 4. Bought from Crypto 3 (SEK price as cost),     sold to SEK      (sales in SEK)
 impl RevolutRow2022 {
     /// Reads the file from path into a `Vec<Row>`.
-    async fn deserialize_from(path: &PathBuf) -> std::io::Result<Vec<RevolutRow2022>> {
+    async fn deserialize_from(path: &PathBuf) -> Result<Vec<RevolutRow2022>> {
         let now = std::time::Instant::now();
         let mut rdr = ReaderBuilder::new()
             .has_headers(true)
@@ -95,7 +96,7 @@ impl RevolutRow2022 {
     }
 
     /// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange`.
-    pub(crate) async fn read_exchanges(path: &PathBuf) -> std::io::Result<Vec<RevolutRow2022>> {
+    pub(crate) async fn read_exchanges(path: &PathBuf) -> Result<Vec<RevolutRow2022>> {
         let rows = Self::deserialize_from(path).await?
             .into_iter()
             .filter(|t| t.r#type == Type::Exchange)
@@ -105,7 +106,7 @@ impl RevolutRow2022 {
 
     /// Reads the file from path into a `Vec<Row>`, returns only rows with type `Exchange` in the
     /// target currency, or  with type `Card Payment` but in the target currency.
-    pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Currency) -> std::io::Result<Vec<RevolutRow2022>> {
+    pub(crate) async fn read_exchanges_in_currency(path: &PathBuf, currency: &Currency) -> Result<Vec<RevolutRow2022>> {
         let rows = Self::deserialize_from(path).await?
             .into_iter()
             .filter(|t| {
@@ -119,7 +120,7 @@ impl RevolutRow2022 {
     }
 
     /// Converts `Vec<Row>` into `Vec<Trade>`, given a target currency.
-    pub(crate) async fn rows_to_trades(rows: &Vec<RevolutRow2022>, currency: &Currency) -> std::io::Result<Vec<Trade>> {
+    pub(crate) async fn rows_to_trades(rows: &Vec<RevolutRow2022>, currency: &Currency) -> Result<Vec<Trade>> {
         let (trades, _): (Vec<Trade>, Option<&RevolutRow2022>) =
             rows.iter().rev()
                 .fold((vec![], None), |(mut acc, prev), row| {
