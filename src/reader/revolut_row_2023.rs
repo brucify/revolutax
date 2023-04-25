@@ -11,7 +11,7 @@ use std::path::PathBuf;
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub(crate) struct RevolutRow2023 {
     #[serde(rename = "Type")]
-    pub(crate) r#type: Type,
+    r#type: Type,
 
     #[serde(rename = "Product")]
     product: Product,
@@ -23,13 +23,13 @@ pub(crate) struct RevolutRow2023 {
     completed_date: Option<String>,
 
     #[serde(rename = "Description")]
-    pub(crate) description: String,
+    description: String,
 
     #[serde(rename = "Amount")]
     amount: Decimal,
 
     #[serde(rename = "Currency")]
-    pub(crate) currency: Currency,
+    currency: Currency,
 
     #[serde(rename = "Fiat amount")]
     fiat_amount: Decimal,
@@ -44,7 +44,7 @@ pub(crate) struct RevolutRow2023 {
     base_currency: Currency,
 
     #[serde(rename = "State")]
-    pub(crate) state: State,
+    state: State,
 
     #[serde(rename = "Balance")]
     balance: Option<Decimal>,
@@ -52,7 +52,7 @@ pub(crate) struct RevolutRow2023 {
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "UPPERCASE")]
-pub(crate) enum Type {
+enum Type {
     Exchange,
     Transfer,
     Cashback,
@@ -64,20 +64,20 @@ pub(crate) enum Type {
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "UPPERCASE")]
-pub(crate) enum State {
+enum State {
     Completed,
     Declined,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "PascalCase")]
-pub(crate) enum Product {
+enum Product {
     Current,
     Savings,
 }
 
 impl RevolutRow2023 {
-    async fn deserialize_from(path: &PathBuf) -> Result<Vec<RevolutRow2023>> {
+    pub(crate) async fn deserialize_from(path: &PathBuf) -> Result<Vec<RevolutRow2023>> {
         let now = std::time::Instant::now();
         let mut rdr = ReaderBuilder::new()
             .has_headers(true)
@@ -143,9 +143,11 @@ impl RevolutRow2023 {
 
 #[cfg(test)]
 mod test {
+    use crate::calculator::money::Money;
+    use crate::calculator::taxable_trade::TaxableTrade;
     use crate::calculator::trade::{Direction, Trade};
-    use crate::calculator::{Money, taxable_trades, TaxableTrade};
-    use crate::reader::revolut_row_2023::{Product, RevolutRow2023, State, Type};
+    use crate::calculator::{taxable_trades};
+    use crate::reader::revolut_row_2023::RevolutRow2023;
     use futures::executor::block_on;
     use rust_decimal_macros::dec;
     use std::error::Error;

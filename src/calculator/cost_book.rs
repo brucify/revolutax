@@ -29,7 +29,7 @@ pub(crate) async fn taxable_trades(trades: &Vec<Trade>, currency: &Currency, bas
 }
 
 #[derive(Debug)]
-pub(crate) struct CostBook {
+struct CostBook {
     base: Currency,
     currency: Currency,
     costs: Vec<Cost>,

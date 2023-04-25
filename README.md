@@ -1,91 +1,67 @@
-cryptotax
-=====
+# cryptotax
 
-A Rust CLI application. Searches for currency exchanges in a Revolut CSV file and outputs a new csv containing the tax
-information.
+A Rust CLI tool to calculate the taxes owed on cryptocurrency trading activities on Revolut. 
+This tool reads the transaction history from Revolut and generates a new CSV file, summarizing 
+the taxable transactions in a readable format.
 
-```shell
-cryptotax
-Search for currency exchanges in a Revolut csv file and output a new csv containing the tax
-information
+While this program is specifically designed to report Swedish tax for Skatteverket, it can also
+be used for general tax reporting purposes in other countries.
 
-USAGE:
-    cryptotax [OPTIONS] <PATH>
+## Installation
 
-ARGS:
-    <PATH>    Path to the Revolut transactions_history.csv file that contains transactions.
+To install Rust, follow the official installation guide available at [rustup.rs](https://rustup.rs/).
 
-OPTIONS:
-    -b, --base <BASE>            Base currency. The currency in which you report the tax. Default:
-                                 'SEK'
-    -c, --currency <CURRENCY>    The traded currency for which you report the tax. 'ALL' for all
-                                 currencies when --exchanges is used
-    -e, --exchanges              Filter the input csv file. Print to stdout a new csv file with
-                                 items with type 'Exchange' only
-    -h, --help                   Print help information
-    -t, --trades                 Merge two lines of a currency 'Exchange' into a single trade. Print
-                                 to stdout a new csv file
-```
+After Rust is installed, clone the repository and build the project:
 
-Build
------
 
     $ cargo build
 
 Usage
 -----
 
-    $ cargo build
-    $ target/debug/cryptotax transactions.csv --currency ETH > eth.csv
+After building the program, use the following command to generate a tax report csv:
 
-Or
+    $ target/debug/cryptotax transactions_history.csv --base-currency SEK > tax.csv
 
-    $ cargo run -- transactions_history.csv --currency ETH --base SEK > tax_eth.csv
-    $ cargo run -- transactions_history.csv --currency ETH --exchanges > exchanges_eth.csv
-    $ cargo run -- transactions_history.csv --currency ETH --trades > trades_eth.csv
+Alternatively, you can use the cargo run command:
 
-Optionally, set the environment variable`RUST_LOG` to `info` or `debug` to see more logs.
+    $ cargo run -- transactions_history.csv --base-currency SEK > tax.csv
 
-    $ RUST_LOG=debug cargo run -- transactions_history.csv --currency ETH > eth.csv
+To see more logs, set the environment variable RUST_LOG to info or debug:
+
+    $ RUST_LOG=debug cargo run -- transactions_history.csv --base-currency SEK > tax.csv
 
 Examples
 -----
 
-You will typically receive a `transaction_history.csv` file from Revolut customer service which looks like this:
+The program reads the transactions of type `EXCHANGE` and `CARD_PAYMENT` and generates a new csv file tax.csv. For example:
 
+    $ cargo run -- transactions_history.csv --base-currency SEK > tax.csv
 
-| Type         | Started Date        | Completed Date      | Description        | Amount      | Fee        | Currency | Original Amount | Original Currency | Settled Amount | Settled Currency | State     | Balance    |
-|--------------|---------------------|---------------------|--------------------|-------------|------------|----------|-----------------|-------------------|----------------|------------------|-----------|------------|
-| Exchange     | 2022-05-02 08:00:00 | 2022-05-02 08:00:00 | Exchanged to BTC   | -100.00     | -1.00      | SEK      | -100.00         | SEK               |                |                  | Completed | 200.00     |
-| Exchange     | 2022-05-02 08:00:00 | 2022-05-02 08:00:00 | Exchanged from SEK | 0.00010000  | 0.00000000 | BTC      | 0.00010000      | BTC               |                |                  | Completed | 0.00010000 |
-| Card Payment | 2022-04-01 17:00:00 | 2020-04-06 03:00:00 | Klarna             | -0.00100000 | 0.00000000 | BTC      | -500.00         | SEK               | 500.00         | SEK              | Completed | 0.00000000 |
+Here is an example input CSV file:
 
-The program reads the transactions of type `Exchange` and `Card Payment` and generates a new csv file `tax_btc.csv`:
-
-```bash
-$ cargo run -- transactions_history.csv --currency ETH --base SEK > tax_btc.csv
-```
-| Date                | Currency | Amount | Income                       | Cost                                                                   | Net Income |
-|---------------------|----------|--------|------------------------------|------------------------------------------------------------------------|------------|
-| 2022-05-02 17:00:00 | BTC      | -0.005 | 500                          | -600                                                                   | -100       |
-| 2022-04-01 22:00:00 | BTC      | -0.02  | 2000                         | -1500                                                                  | 500        |
-| 2021-12-01 22:00:00 | BTC      | -0.3   | 30000                        | -25000                                                                 | 5000       |
-| 2021-11-09 16:00:00 | BTC      | -0.001 | (20 EOS 2021-11-09 16:00:00) | -300                                                                   |            |
-| 2021-11-01 09:00:00 | BTC      | -0.001 | (50 DOT 2021-11-01 09:00:00) | (-150 USD 2021-10-03 07:00:00), (-100 DOGE 2021-10-02 17:30:00), -3000 |            |
-| 2021-11-01 08:30:00 | BTC      | -0.001 | 20000                        | (-100000 DOGE 2021-10-02 17:30:00)                                     |            |
-
-
-Or just outputs the trades in a new csv file `trades_btc.csv`:
-
-```bash
-$ cargo run -- transactions_history.csv --currency ETH --base SEK --trades > trades_btc.csv
+```csv
+Type,Product,Started Date,Completed Date,Description,Amount,Currency,Fiat amount,Fiat amount (inc. fees),Fee,Base currency,State,Balance
+EXCHANGE,Current,2023-01-01 10:00:00,2023-01-01 10:00:00,Exchanged to EOS,30.0000,EOS,600.00,609.15,9.15,SEK,COMPLETED,30.0000
+EXCHANGE,Current,2023-01-02 10:00:00,2023-01-02 10:00:00,Exchanged to SEK,-30.0000,EOS,-400.00,-394.86,5.14,SEK,COMPLETED,0.0000
+TRANSFER,Current,2023-02-08 10:00:00,2023-02-08 10:00:00,Transferred to Savings,-10.0000,EOS,-200.00,-200.00,0.00,SEK,COMPLETED,40.0000
+TRANSFER,Current,2023-04-04 10:00:00,2023-04-04 10:00:00,Transferred to Current,100.0000,EOS,2000.00,2000.00,0.00,SEK,COMPLETED,140.0000
+CARD_PAYMENT,Current,2023-05-06 10:00:00,2023-05-06 10:00:00,Payment to Amazon,-25.0000,EOS,-500.00,-495.75,4.25,SEK,COMPLETED,65.0000
 ```
 
-| Type | Paid Currency | Paid Amount | Exchanged Currency | Exchanged Amount | Date                | Vault |
-|------|---------------|-------------|--------------------|------------------|---------------------|-------|
-| Buy  | BTC           | 0.00003000  | SEK                | -2               | 2022-05-01 06:00:00 | false |
-| Buy  | BTC           | 0.00006000  | SEK                | -3.82            | 2022-05-01 10:00:00 | false |
-| Buy  | BTC           | 0.00006667  | SEK                | -4.1             | 2022-05-01 19:30:00 | false |
-| Buy  | BTC           | 0.00005000  | SEK                | -3               | 2022-05-01 23:30:00 | false |
-| Sell | BTC           | -0.00005000 | SEK                | -3               | 2022-05-01 23:30:00 | false |
+The program reads the input CSV file and outputs the following tax report in a CSV format:
 
+```csv
+Date;Currency;Amount;Income;Cost;Net Income
+2023-01-02 10:00:00;EOS;-30;394.86;-609.1500;-214.2900
+2023-04-04 11:00:00;EOS;-50;594.86;-1009.6500;-414.7900
+2023-05-06 10:00:00;EOS;-25;495.75;-505.7200;-9.9700
+```
+This report shows the following information for each transaction:
+
+* Date: The date and time when the transaction occurred.
+* Currency (`Valutakod`): The currency used in the transaction.
+* Amount (`Antal`): The amount of currency used in the transaction.
+* Income (`Försäljningspris`): The income generated from the transaction, calculated in the base currency (SEK).
+* Cost (`Omkostnadsbelopp`): The cost of the transaction, calculated in the base currency (SEK).
+* Net Income (`Vinst/förlust`): The net income generated from the transaction, calculated by subtracting the cost from the income.

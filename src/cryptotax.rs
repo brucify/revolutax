@@ -57,13 +57,33 @@ pub async fn merge_exchanges(path: &PathBuf, currency: &String) -> Result<()> {
 /// converts the csv rows into transactions,
 /// calculates tax from the transactions,
 /// and finally prints the results to `std::io::stdout()`.
-pub async fn calculate_tax(path: &PathBuf, currency: &String, base: &String) -> Result<()> {
+pub async fn calculate_tax_2022(path: &PathBuf, currency: &String, base: &String) -> Result<()> {
     let now = std::time::Instant::now();
     let rows = reader::RevolutRow2022::read_exchanges_in_currency(path, currency).await?;
     info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
     let trades = reader::RevolutRow2022::rows_to_trades(&rows, currency).await?;
+    info!("Done converting to transactions. Elapsed: {:.2?}", now.elapsed());
+
+    let now = std::time::Instant::now();
+    let trades = calculator::taxable_trades(&trades, currency, base).await?;
+    info!("Done calculating taxes. Elapsed: {:.2?}", now.elapsed());
+
+    let now = std::time::Instant::now();
+    writer::print(&trades).await?;
+    info!("Done printing rows. Elapsed: {:.2?}", now.elapsed());
+
+    Ok(())
+}
+
+pub async fn calculate_tax_2023(path: &PathBuf, currency: &String, base: &String) -> Result<()> {
+    let now = std::time::Instant::now();
+    let rows = reader::RevolutRow2023::deserialize_from(path).await?;
+    info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
+
+    let now = std::time::Instant::now();
+    let trades = reader::RevolutRow2023::rows_to_trades(&rows).await?;
     info!("Done converting to transactions. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
