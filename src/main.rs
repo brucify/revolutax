@@ -1,5 +1,4 @@
 use anyhow::Context;
-use cryptotax::cryptotax;
 use clap::Parser;
 use futures::executor::block_on;
 
@@ -32,33 +31,33 @@ fn main() {
     let base: String = args.base_currency.unwrap_or("SEK".to_string());
     let csv_year: u16 = args.csv_year.unwrap_or(2023);
 
-    match csv_year {
-        2023 => {
+    match (csv_year, args.print_exchanges_only, args.print_trades) {
+        (2023, _, _) => {
             block_on(cryptotax::calculate_tax_2023(&args.path, &currency, &base))
                 .with_context(|| format!("Could not calculate tax from file `{:?}`", &args.path))
                 .unwrap();
         },
-        2022 => {
-            if args.print_exchanges_only {
-                match currency.as_str() {
-                    "ALL" =>
-                        block_on(cryptotax::print_exchanges(&args.path))
-                            .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
-                            .unwrap(),
-                    _ =>
-                        block_on(cryptotax::print_exchanges_in_currency(&args.path, &currency))
-                            .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
-                            .unwrap(),
-                }
-            } else if args.print_trades {
-                block_on(cryptotax::merge_exchanges(&args.path, &currency))
-                    .with_context(|| format!("Could not merge exchanges from file `{:?}`", &args.path))
-                    .unwrap();
-            } else {
-                block_on(cryptotax::calculate_tax_2022(&args.path, &currency, &base))
-                    .with_context(|| format!("Could not calculate tax from file `{:?}`", &args.path))
-                    .unwrap();
+        (2022, true, _) => {
+            match currency.as_str() {
+                "ALL" =>
+                    block_on(cryptotax::print_exchanges(&args.path))
+                        .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
+                        .unwrap(),
+                _ =>
+                    block_on(cryptotax::print_exchanges_in_currency(&args.path, &currency))
+                        .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
+                        .unwrap(),
             }
+        },
+        (2022, false, true) => {
+            block_on(cryptotax::merge_exchanges(&args.path, &currency))
+                .with_context(|| format!("Could not merge exchanges from file `{:?}`", &args.path))
+                .unwrap();
+        },
+        (2022, false, false) => {
+            block_on(cryptotax::calculate_tax_2022(&args.path, &currency, &base))
+                .with_context(|| format!("Could not calculate tax from file `{:?}`", &args.path))
+                .unwrap();
         },
         _ => {
             println!("Unknown csv year")
