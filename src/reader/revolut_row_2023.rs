@@ -77,7 +77,7 @@ enum Product {
 }
 
 impl RevolutRow2023 {
-    pub(crate) async fn deserialize_from(path: &PathBuf) -> Result<Vec<RevolutRow2023>> {
+    pub(crate) async fn deserialize_from(path: &PathBuf) -> Result<Vec<Trade>> {
         let now = std::time::Instant::now();
         let mut rdr = ReaderBuilder::new()
             .has_headers(true)
@@ -96,11 +96,11 @@ impl RevolutRow2023 {
 
         // 2023 Revolut csv is sorted first by Product (Current/Savings), then by date
         rows.sort_unstable_by(|a,b| a.completed_date.cmp(&b.completed_date));
-        
-        Ok(rows)
+
+        Self::rows_to_trades(&rows).await
     }
 
-    pub(crate) async fn rows_to_trades(rows: &Vec<RevolutRow2023>) -> Result<Vec<Trade>> {
+    async fn rows_to_trades(rows: &Vec<RevolutRow2023>) -> Result<Vec<Trade>> {
         let trades: Vec<Trade> =
             rows.iter()
                 .fold(vec![], |mut acc, row| {
@@ -146,7 +146,7 @@ mod test {
     use crate::calculator::money::Money;
     use crate::calculator::taxable_trade::TaxableTrade;
     use crate::calculator::trade::{Direction, Trade};
-    use crate::calculator::{taxable_trades};
+    use crate::calculator;
     use crate::reader::revolut_row_2023::RevolutRow2023;
     use futures::executor::block_on;
     use rust_decimal_macros::dec;
@@ -185,8 +185,7 @@ mod test {
          * When
          */
         let trades = block_on(async {
-            let rows = RevolutRow2023::deserialize_from(&PathBuf::from(path)).await?;
-            RevolutRow2023::rows_to_trades(&rows).await
+            RevolutRow2023::deserialize_from(&PathBuf::from(path)).await
         })?;
 
         /*
@@ -226,7 +225,7 @@ mod test {
          * When
          */
         let taxable_trades = block_on(
-            taxable_trades(&trades, &"EOS".to_string(), &"SEK".to_string())
+            calculator::taxable_trades(&trades, &"EOS".to_string(), &"SEK".to_string())
         )?;
 
         /*

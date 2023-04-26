@@ -255,7 +255,7 @@ impl<'a> Deductor<'a>
 #[cfg(test)]
 mod test {
     use crate::calculator::cost_book::{Cost, CostBook};
-    use crate::calculator::money::{Cash, Coupon, Money};
+    use crate::calculator::money::Money;
     use crate::calculator::taxable_trade::TaxableTrade;
     use crate::calculator::trade::{Direction, Trade};
     use rust_decimal_macros::dec;
@@ -381,8 +381,8 @@ mod test {
             "2022-05-05 05:01:12".to_string(),
             "DOGE".to_string(),
             dec!(-50),
-            Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(200.63) }),
-            vec![Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(-105) })],
+            Money::new_cash("SEK".to_string(), dec!(200.63)),
+            vec![Money::new_cash("SEK".to_string(), dec!(-105))],
             Some(dec!(95.63))
         ));
 
@@ -400,8 +400,8 @@ mod test {
             "2022-07-06 06:02:13".to_string(),
             "DOGE".to_string(),
             dec!(-50),
-            Money::Coupon(Coupon{ currency: "BTC".to_string(), amount: dec!(0.0000201), date: "2022-07-06 06:02:13".to_string() }),
-            vec![Money::Coupon(Coupon{ currency: "BTC".to_string(), amount: dec!(-0.000000505), date: "2021-03-04 11:31:30".to_string() })],
+            Money::new_coupon("BTC".to_string(), dec!(0.0000201), "2022-07-06 06:02:13".to_string()),
+            vec![Money::new_coupon("BTC".to_string(), dec!(-0.000000505), "2021-03-04 11:31:30".to_string())],
             None
         ));
 
@@ -419,10 +419,10 @@ mod test {
             "2022-08-07 07:03:14".to_string(),
             "DOGE".to_string(),
             dec!(-1250),
-            Money::Coupon(Coupon{ currency: "BCH".to_string(), amount: dec!(325), date: "2022-08-07 07:03:14".to_string() }),
-            vec![ Money::Coupon(Coupon{ currency: "BTC".to_string(), amount: dec!(-0.000009595), date: "2021-03-04 11:31:30".to_string() })
-                  , Money::Coupon(Coupon{ currency: "EOS".to_string(), amount: dec!(-500), date: "2021-02-03 10:30:29".to_string() })
-                  , Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(-210) })
+            Money::new_coupon("BCH".to_string(), dec!(325), "2022-08-07 07:03:14".to_string()),
+            vec![ Money::new_coupon("BTC".to_string(), dec!(-0.000009595), "2021-03-04 11:31:30".to_string())
+                  , Money::new_coupon("EOS".to_string(), dec!(-500), "2021-02-03 10:30:29".to_string())
+                  , Money::new_cash("SEK".to_string(), dec!(-210))
             ],
             None
         ));
@@ -437,7 +437,7 @@ mod test {
         let deducted = cost.deduct(dec!(-500));
         assert_eq!(deducted, Some(Cost{
             paid_amount: dec!(500),
-            exchanged: Money::Cash(Cash{ currency: "SEK".to_string(), amount: dec!(-1066.6666666666666666666666666) }),
+            exchanged: Money::new_cash("SEK".to_string(), dec!(-1066.6666666666666666666666666)),
             is_vault: true
         }));
 
@@ -446,7 +446,7 @@ mod test {
         let deducted = cost.deduct(dec!(-50));
         assert_eq!(deducted, Some(Cost{
             paid_amount: dec!(50),
-            exchanged: Money::Coupon(Coupon{ currency: "EOS".to_string(), amount: dec!(-125), date: "2021-02-03 10:30:29".to_string()}),
+            exchanged: Money::new_coupon("EOS".to_string(), dec!(-125), "2021-02-03 10:30:29".to_string()),
             is_vault: false
         }));
 
