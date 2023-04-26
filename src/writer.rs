@@ -1,15 +1,11 @@
-use csv::WriterBuilder;
-use serde::Serialize;
-use std::io;
-
 /// Wraps the `stdout.lock()` in a `csv::Writer` and writes the rows.
 /// The `csv::Writer` is already buffered so there is no need to wrap
 /// `stdout.lock()` in a `io::BufWriter`.
-pub(crate) async fn print<S: Serialize>(rows: &Vec<S>) -> io::Result<()>{
-    let stdout = io::stdout();
+pub(crate) async fn print_csv_rows<S: serde::Serialize>(rows: &Vec<S>) -> std::io::Result<()>{
+    let stdout = std::io::stdout();
     let lock = stdout.lock();
     let mut wtr =
-        WriterBuilder::new()
+        csv::WriterBuilder::new()
             .has_headers(true)
             .delimiter(b';')
             .from_writer(lock);

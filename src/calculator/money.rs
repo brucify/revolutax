@@ -47,8 +47,8 @@ impl Money {
         let all_cash = costs.iter().all(|c| c.is_cash());
         match (self, all_cash) {
             (Money::Cash(cash), true) => {
-                let cost = costs.iter().fold(dec!(0), |acc, c| acc + c.amount());
-                Some(cash.amount + cost)
+                let sum = costs.iter().fold(dec!(0), |acc, c| acc + c.amount());
+                Some(cash.amount + sum)
             }
             _ => None
         }
