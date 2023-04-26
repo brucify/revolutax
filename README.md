@@ -20,11 +20,11 @@ After Rust is installed, clone the repository and build the project:
 
 The program reads the transactions of type `EXCHANGE` and `CARD_PAYMENT` and generates a new csv file tax.csv. For example:
 
-    $ cargo run -- account_statement.csv --base-currency SEK > tax.csv
+    $ cargo run -- account_statement.csv > tax.csv
 
 To see more logs, set the environment variable RUST_LOG to info or debug:
 
-    $ RUST_LOG=debug cargo run -- account_statement.csv --base-currency SEK > tax.csv
+    $ RUST_LOG=debug cargo run -- account_statement.csv > tax.csv
 
 Here is an example input CSV file `account_statement.csv`:
 
