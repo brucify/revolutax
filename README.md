@@ -1,11 +1,11 @@
 # cryptotax
 
-A Rust CLI tool to calculate the taxes owed on cryptocurrency trading activities on Revolut. 
-This tool reads the transaction history from Revolut and generates a new CSV file, summarizing 
-the taxable transactions in a readable format.
+A Rust CLI tool for calculating taxes on cryptocurrencies traded on Revolut. It reads the 
+account statement CSV file from Revolut and generates a new CSV file summarizing the taxable
+trades.
 
-While this program is specifically designed to report Swedish tax for Skatteverket, it can also
-be used for general tax reporting purposes in other countries.
+Although this program is specifically designed for reporting Swedish taxes to Skatteverket,
+it can also be used for general tax reporting purposes in other countries.
 
 ## Installation
 
@@ -16,29 +16,17 @@ After Rust is installed, clone the repository and build the project:
 
     $ cargo build
 
-Usage
------
-
-After building the program, use the following command to generate a tax report csv:
-
-    $ target/debug/cryptotax transactions_history.csv --base-currency SEK > tax.csv
-
-Alternatively, you can use the cargo run command:
-
-    $ cargo run -- transactions_history.csv --base-currency SEK > tax.csv
-
-To see more logs, set the environment variable RUST_LOG to info or debug:
-
-    $ RUST_LOG=debug cargo run -- transactions_history.csv --base-currency SEK > tax.csv
-
-Examples
------
+## Usage
 
 The program reads the transactions of type `EXCHANGE` and `CARD_PAYMENT` and generates a new csv file tax.csv. For example:
 
-    $ cargo run -- transactions_history.csv --base-currency SEK > tax.csv
+    $ cargo run -- account_statement.csv --base-currency SEK > tax.csv
 
-Here is an example input CSV file:
+To see more logs, set the environment variable RUST_LOG to info or debug:
+
+    $ RUST_LOG=debug cargo run -- account_statement.csv --base-currency SEK > tax.csv
+
+Here is an example input CSV file `account_statement.csv`:
 
 ```csv
 Type,Product,Started Date,Completed Date,Description,Amount,Currency,Fiat amount,Fiat amount (inc. fees),Fee,Base currency,State,Balance
@@ -49,7 +37,7 @@ TRANSFER,Current,2023-04-04 10:00:00,2023-04-04 10:00:00,Transferred to Current,
 CARD_PAYMENT,Current,2023-05-06 10:00:00,2023-05-06 10:00:00,Payment to Amazon,-25.0000,EOS,-500.00,-495.75,4.25,SEK,COMPLETED,65.0000
 ```
 
-The program reads the input CSV file and outputs the following tax report in a CSV format:
+The program reads the input CSV file and outputs the following tax report `tax.csv`:
 
 ```csv
 Date;Currency;Amount;Income;Cost;Net Income
