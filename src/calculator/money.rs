@@ -66,13 +66,13 @@ impl std::fmt::Display for Money {
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct Cash {
-    pub(crate) currency: Currency,
+    currency: Currency,
     pub(crate) amount: Decimal
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) struct Coupon {
-    pub(crate) currency: Currency,
-    pub(crate) amount: Decimal,
-    pub(crate) date: String
+    currency: Currency,
+    amount: Decimal,
+    date: String
 }

@@ -67,11 +67,11 @@ pub async fn calculate_tax_2022(path: &PathBuf, currency: &String, base: &String
     info!("Done converting to transactions. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let trades = calculator::taxable_trades(&trades, currency, base).await?;
+    let taxable_trades = calculator::taxable_trades(&trades, currency, base).await?;
     info!("Done calculating taxes. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    writer::print(&trades).await?;
+    writer::print(&taxable_trades).await?;
     info!("Done printing rows. Elapsed: {:.2?}", now.elapsed());
 
     Ok(())
@@ -79,19 +79,15 @@ pub async fn calculate_tax_2022(path: &PathBuf, currency: &String, base: &String
 
 pub async fn calculate_tax_2023(path: &PathBuf, currency: &String, base: &String) -> Result<()> {
     let now = std::time::Instant::now();
-    let rows = reader::RevolutRow2023::deserialize_from(path).await?;
+    let trades = reader::RevolutRow2023::deserialize_from(path).await?;
     info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let trades = reader::RevolutRow2023::rows_to_trades(&rows).await?;
-    info!("Done converting to transactions. Elapsed: {:.2?}", now.elapsed());
-
-    let now = std::time::Instant::now();
-    let trades = calculator::taxable_trades(&trades, currency, base).await?;
+    let taxable_trades = calculator::taxable_trades(&trades, currency, base).await?;
     info!("Done calculating taxes. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    writer::print(&trades).await?;
+    writer::print(&taxable_trades).await?;
     info!("Done printing rows. Elapsed: {:.2?}", now.elapsed());
 
     Ok(())
