@@ -8,15 +8,16 @@ use rust_decimal_macros::dec;
 use std::io::Result;
 use std::ops::{Neg, Sub};
 
-pub(crate) async fn taxable_trades(trades: &Vec<Trade>, currency: &Currency, base: &Currency) -> Result<Vec<TaxableTrade>> {
-    let book = CostBook::new(currency.clone(), base.clone());
+pub(crate) async fn taxable_trades(trades: &Vec<Trade>, currency: &Currency, base_currency: &Currency) -> Result<Vec<TaxableTrade>> {
+    let book = CostBook::new(currency.clone(), base_currency.clone());
     let (trades, book) =
         trades.iter().fold((vec![], book), |(mut acc, mut book), t| {
             match t.direction {
-                Direction::Buy => book.add_buy(t),
+                Direction::Buy =>
+                    book.add_buy(t),
                 Direction::Sell => {
-                    let x = book.add_sell(t).unwrap();
-                    acc.push(x);
+                    let trade = book.add_sell(t).unwrap();
+                    acc.push(trade);
                 },
             }
             (acc, book)

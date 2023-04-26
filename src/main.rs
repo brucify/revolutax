@@ -11,7 +11,7 @@ struct Cli {
     #[clap(short, long, help = "(2022 csv only) Specify the traded cryptocurrency to report the tax for. Use 'ALL' to show all currencies when using --print-exchanges-only")]
     currency: Option<String>,
 
-    #[clap(short, long, help = "Specify the base fiat currency to report the tax in. Defaults to 'SEK'")]
+    #[clap(short, long, help = "(2022 csv only) Specify the base fiat currency to report the tax in. Defaults to 'SEK'")]
     base_currency: Option<String>,
 
     #[clap(long, help = "(2022 csv only) Filter the input CSV file to show only items of type 'Exchange', and print to stdout")]
@@ -27,13 +27,13 @@ struct Cli {
 fn main() {
     env_logger::init();
     let args = Cli::parse();
-    let currency: String = args.currency.unwrap_or("ALL".to_string());
-    let base: String = args.base_currency.unwrap_or("SEK".to_string());
     let csv_year: u16 = args.csv_year.unwrap_or(2023);
+    let currency: String = args.currency.unwrap_or("ALL".to_string());
+    let base_currency: String = args.base_currency.unwrap_or("SEK".to_string());
 
     match (csv_year, args.print_exchanges_only, args.print_trades) {
         (2023, _, _) => {
-            block_on(cryptotax::calculate_tax_2023(&args.path, &currency, &base))
+            block_on(cryptotax::calculate_tax_2023(&args.path))
                 .with_context(|| format!("Could not calculate tax from file `{:?}`", &args.path))
                 .unwrap();
         },
@@ -55,7 +55,7 @@ fn main() {
                 .unwrap();
         },
         (2022, false, false) => {
-            block_on(cryptotax::calculate_tax_2022(&args.path, &currency, &base))
+            block_on(cryptotax::calculate_tax_2022(&args.path, &currency, &base_currency))
                 .with_context(|| format!("Could not calculate tax from file `{:?}`", &args.path))
                 .unwrap();
         },

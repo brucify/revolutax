@@ -60,7 +60,7 @@ pub async fn merge_exchanges(path: &PathBuf, currency: &String) -> Result<()> {
 /// converts the csv rows into transactions,
 /// calculates tax from the transactions,
 /// and finally prints the results to `std::io::stdout()`.
-pub async fn calculate_tax_2022(path: &PathBuf, currency: &String, base: &String) -> Result<()> {
+pub async fn calculate_tax_2022(path: &PathBuf, currency: &String, base_currency: &String) -> Result<()> {
     let now = std::time::Instant::now();
     let rows = reader::RevolutRow2022::read_exchanges_in_currency(path, currency).await?;
     info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
@@ -70,7 +70,7 @@ pub async fn calculate_tax_2022(path: &PathBuf, currency: &String, base: &String
     info!("Done converting to transactions. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let taxable_trades = calculator::taxable_trades(&trades, currency, base).await?;
+    let taxable_trades = calculator::taxable_trades(&trades, currency, base_currency).await?;
     info!("Done calculating taxes. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
@@ -80,13 +80,15 @@ pub async fn calculate_tax_2022(path: &PathBuf, currency: &String, base: &String
     Ok(())
 }
 
-pub async fn calculate_tax_2023(path: &PathBuf, currency: &String, base: &String) -> Result<()> {
+pub async fn calculate_tax_2023(path: &PathBuf) -> Result<()> {
     let now = std::time::Instant::now();
     let trades = reader::RevolutRow2023::deserialize_from(path).await?;
     info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
-    let taxable_trades = calculator::taxable_trades(&trades, currency, base).await?;
+    let currency = trades.first().map(|t| t.paid_currency.clone()).unwrap();
+    let base_currency = trades.first().map(|t| t.exchanged_currency.clone()).unwrap();
+    let taxable_trades = calculator::taxable_trades(&trades, &currency, &base_currency).await?;
     info!("Done calculating taxes. Elapsed: {:.2?}", now.elapsed());
 
     let now = std::time::Instant::now();
