@@ -146,7 +146,6 @@ mod test {
     use crate::calculator::money::Money;
     use crate::calculator::TaxableTrade;
     use crate::calculator::trade::{Direction, Trade};
-    use crate::calculator;
     use crate::reader::RevolutRow2023;
     use futures::executor::block_on;
     use rust_decimal_macros::dec;
@@ -225,7 +224,7 @@ mod test {
          * When
          */
         let taxable_trades = block_on(
-            calculator::taxable_trades(&trades, &"EOS".to_string(), &"SEK".to_string())
+            TaxableTrade::taxable_trades(&trades, &"EOS".to_string(), &"SEK".to_string())
         )?;
 
         /*

@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use futures::executor::block_on;
-use log::info;
+use log::error;
 
 /// Search for currency exchanges in a Revolut csv file and output a new csv containing the tax information.
 #[derive(Parser)]
@@ -29,10 +29,13 @@ struct Cli {
     sru_org_num: Option<String>,
 
     #[arg(long, help = "Name to print in the SRU file")]
-    sru_name: Option<String>,
+    sru_org_name: Option<String>,
+
+    #[arg(long, help = "Only include taxable trades from this year")]
+    year_traded: Option<u16>,
 
     #[arg(long, help = "Specify the year of the Revolut CSV file to process. Defaults to 2023")]
-    csv_year: Option<u16>,
+    csv_version: Option<u16>,
 }
 
 impl Cli {
@@ -45,14 +48,15 @@ impl Cli {
             print_trades,
             sru_file,
             sru_org_num,
-            sru_name,
-            csv_year,
+            sru_org_name,
+            year_traded,
+            csv_version,
         } = self;
 
         let sru_file_config = if sru_file {
             Some(cryptotax::SruFileConfig {
                 sru_org_num: sru_org_num.ok_or(anyhow!("--sru_org_num <SRU_ORG_NUM> is mandatory if --sru_file is given"))?,
-                sru_name,
+                sru_org_name,
             })
         } else {
             None
@@ -65,7 +69,8 @@ impl Cli {
             print_exchanges_only,
             print_trades,
             sru_file_config,
-            csv_year: csv_year.unwrap_or(2023),
+            year_traded,
+            csv_version: csv_version.unwrap_or(2023),
         };
 
         Ok(config)
@@ -78,7 +83,7 @@ fn main() {
     let args = Cli::parse();
     let config = args.to_config().with_context(|| format!("Invalid command line flags")).unwrap();
 
-    match (config.csv_year, config.print_exchanges_only, config.print_trades) {
+    match (config.csv_version, config.print_exchanges_only, config.print_trades) {
         (2022, true, _) => {
             match config.currency.as_str() {
                 "ALL" => block_on(cryptotax::print_exchanges(&config.path)),
@@ -93,17 +98,17 @@ fn main() {
                 .unwrap();
         },
         (2022, false, false) => {
-            block_on(cryptotax::calculate_tax_2022(&config))
+            block_on(cryptotax::calculate_tax_v2022(&config))
                 .with_context(|| format!("Could not calculate tax from file `{:?}`", &config.path))
                 .unwrap();
         },
         (2023, _, _) => {
-            block_on(cryptotax::calculate_tax_2023(&config))
+            block_on(cryptotax::calculate_tax_v2023(&config))
                 .with_context(|| format!("Could not calculate tax from file `{:?}`", &config.path))
                 .unwrap();
         },
         _ => {
-            info!("Unknown csv year")
+            error!("Unknown csv year")
         },
     }
 }

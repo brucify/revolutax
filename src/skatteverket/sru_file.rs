@@ -3,6 +3,7 @@
  */
 
 use anyhow::{anyhow, Result};
+use chrono::Datelike;
 use log::debug;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -80,7 +81,7 @@ impl SruFile {
             .ok()
             .map(|information| {
                 SruFile {
-                    form: format!("K4-{}P4", chrono::Utc::now().format("%Y")),
+                    form: format!("K4-{}P4", chrono::Utc::now().year() - 1),
                     identity: Identity { org_num },
                     name,
                     information,
@@ -176,7 +177,7 @@ fn sru_information_vec(
 
 #[cfg(test)]
 mod test {
-    use crate::calculator;
+    use crate::calculator::TaxableTrade;
     use crate::reader::RevolutRow2023;
     use crate::skatteverket::sru_file::{Identity, SruFile, trades_to_sru_information};
     use futures::executor::block_on;
@@ -214,7 +215,7 @@ mod test {
          */
         let taxable_trades = block_on(async {
             let trades = RevolutRow2023::deserialize_from(&PathBuf::from(path)).await?;
-            calculator::taxable_trades(&trades, &"EOS".to_string(), &"SEK".to_string()).await
+            TaxableTrade::taxable_trades(&trades, &"EOS".to_string(), &"SEK".to_string()).await
         })?;
 
         let sru_file = SruFile {
