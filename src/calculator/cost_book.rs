@@ -11,6 +11,7 @@ use std::ops::{Neg, Sub};
 
 pub(crate) async fn all_taxable_trades(trades: &Vec<Trade>) -> Vec<TaxableTrade> {
     let mut unique_pairs: HashSet<(Currency, Currency)> = HashSet::new();
+
     for t in trades {
         let pair = (t.paid_currency.clone(), t.exchanged_currency.clone());
         unique_pairs.insert(pair);
@@ -21,6 +22,7 @@ pub(crate) async fn all_taxable_trades(trades: &Vec<Trade>) -> Vec<TaxableTrade>
         let result = self::taxable_trades(&trades, &pair.0, &pair.1).await.unwrap();
         taxable_trades.extend(result);
     }
+
     taxable_trades
 }
 
@@ -29,13 +31,18 @@ pub(crate) async fn taxable_trades(trades: &Vec<Trade>, currency: &Currency, bas
     let (taxable_trades, book) =
         trades.iter()
             .fold((vec![], book), |(mut acc, mut book), trade| {
-                match trade.direction {
-                    Direction::Buy =>
-                        book.add_buy(trade),
-                    Direction::Sell => {
-                        let taxable_trade = book.add_sell(trade).unwrap();
-                        acc.push(taxable_trade);
-                    },
+                let currency_match =
+                    trade.paid_currency.eq(&book.currency)
+                        && trade.exchanged_currency.eq(&book.base_currency);
+                if currency_match {
+                    match trade.direction {
+                        Direction::Buy =>
+                            book.add_buy(trade),
+                        Direction::Sell => {
+                            let taxable_trade = book.add_sell(trade).unwrap();
+                            acc.push(taxable_trade);
+                        }
+                    }
                 }
                 (acc, book)
             });
