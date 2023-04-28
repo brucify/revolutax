@@ -73,7 +73,7 @@ struct Information {
 
 impl SruFile {
     pub(crate) fn try_new(
-        trades: &Vec<TaxableTrade>,
+        trades: Vec<&TaxableTrade>,
         org_num: String,
         name: Option<String>,
     ) -> Option<Self> {
@@ -118,7 +118,7 @@ impl SruFile {
 }
 
 fn trades_to_sru_information(
-    trades: &Vec<TaxableTrade>,
+    trades: Vec<&TaxableTrade>,
 ) -> Result<Vec<Information>> {
     let mut summary_map: HashMap<Currency, (Decimal, Decimal, Decimal)> = HashMap::new();
 
@@ -222,7 +222,7 @@ mod test {
             form: "K4-2022P4".to_string(),
             identity: Identity { org_num: "195001011234".to_string() },
             name: None,
-            information: trades_to_sru_information(&taxable_trades)?,
+            information: trades_to_sru_information(taxable_trades.iter().collect())?,
             system_info: None,
         };
 

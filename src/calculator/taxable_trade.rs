@@ -119,15 +119,27 @@ impl TaxableTrade {
     }
 
     pub(crate) async fn print_taxable_trades(taxable_trades: &Vec<TaxableTrade>, config: &Config) -> Result<()> {
+        let taxable_trades: Vec<&TaxableTrade> =
+            taxable_trades.iter()
+                .filter(|t| {
+                    config.year_traded
+                        .map(|year_traded|
+                            t.date.contains(&year_traded.to_string())
+                        )
+                        .unwrap_or(true)
+                })
+                .collect();
+
         if let Some(sru_conf) = &config.sru_file_config {
-            Self::print_sru_file(&taxable_trades, sru_conf.sru_org_num.clone(), sru_conf.sru_org_name.clone()).await?;
+            Self::print_sru_file(taxable_trades, sru_conf.sru_org_num.clone(), sru_conf.sru_org_name.clone()).await?;
         } else {
             writer::print_csv_rows(&taxable_trades).await?;
         }
+
         Ok(())
     }
 
-    async fn print_sru_file(taxable_trades: &Vec<TaxableTrade>, org_num: String, name: Option<String>) -> Result<()> {
+    async fn print_sru_file(taxable_trades: Vec<&TaxableTrade>, org_num: String, name: Option<String>) -> Result<()> {
         let sru_file = skatteverket::SruFile::try_new(taxable_trades, org_num, name)
             .ok_or(anyhow!("Failed to create SRU file from taxable trades"))?;
 
