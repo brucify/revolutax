@@ -3,7 +3,7 @@ use crate::calculator::cost_book::CostBook;
 use crate::calculator::money::Money;
 use crate::calculator::trade::{Direction, Trade};
 use crate::{Config, skatteverket, writer};
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use log::debug;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -140,14 +140,16 @@ impl TaxableTrade {
     }
 
     async fn print_sru_file(taxable_trades: Vec<&TaxableTrade>, org_num: String, name: Option<String>) -> Result<()> {
-        let sru_file = skatteverket::SruFile::try_new(taxable_trades, org_num, name)
-            .ok_or(anyhow!("Failed to create SRU file from taxable trades"))?;
-
-        let stdout = std::io::stdout();
-        let handle = stdout.lock();
-        sru_file.write(handle)?;
-
-        Ok(())
+        let mut res = Ok(());
+        skatteverket::SruFile::try_new(taxable_trades, org_num, name)
+            .map(|sru_file| {
+                let stdout = std::io::stdout();
+                let handle = stdout.lock();
+                if let Err(e) = sru_file.write(handle) {
+                    res = Err(e)
+                }
+            });
+        res
     }
 }
 
