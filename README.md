@@ -4,8 +4,11 @@ A Rust CLI tool for calculating taxes on cryptocurrencies traded on Revolut. It 
 account statement CSV file from Revolut and generates a new CSV file summarizing the taxable
 trades.
 
-Although this program is specifically designed for reporting Swedish taxes to Skatteverket,
-it can also be used for general tax reporting purposes in other countries.
+This tools can also generate an [SRU file](https://www.skatteverket.se/privat/deklaration/lamnaenbilagatilldeklarationen.4.515a6be615c637b9aa46366.html?q=sru+fil) 
+that can be uploaded to Swedish Tax Agency
+([K4-bilagan - Försäljning - Värdepapper m.m.](https://www.skatteverket.se/privat/deklaration/lamnaenbilagatilldeklarationen.4.515a6be615c637b9aa46366.html?q=sru+fil))
+Although this program is specifically designed for reporting Swedish taxes, it can also be used
+for general tax reporting purposes in other countries.
 
 ## Installation
 
@@ -22,9 +25,13 @@ The program reads the transactions of type `EXCHANGE` and `CARD_PAYMENT` and gen
 
     $ cargo run -- account_statement.csv > tax.csv
 
-To see more logs, set the environment variable RUST_LOG to info or debug:
+To generate an SRU file for the Swedish Tax Agency, give the `--sru-file` flag:
 
-    $ RUST_LOG=debug cargo run -- account_statement.csv > tax.csv
+    $ cargo run -- \
+        --sru-file \
+        --sru-org-num 195012310123 \
+        --sru-org-name "Svea Specimen" \ 
+        revolut-2023.csv > BLANKETTER.sru
 
 Here is an example input CSV file `account_statement.csv`:
 
@@ -51,7 +58,22 @@ This report shows the following information for each transaction:
 * Income (`Försäljningspris`): The income generated from the transaction, calculated in the base currency (SEK).
 * Cost (`Omkostnadsbelopp`): The cost of the transaction, calculated in the base currency (SEK).
 * Net Income (`Vinst/förlust`): The net income generated from the transaction, calculated by subtracting the cost from the income.
-  
+
+With `--sru-file` flag, the output SRU file `BLANKETTER.sru` looks like this:
+
+```
+#BLANKETT K4-2022P4
+#IDENTITET 195012310123 20230428 222030
+#NAMN Svea Specimen
+#UPPGIFT 3410 55
+#UPPGIFT 3411 EOS
+#UPPGIFT 3412 891
+#UPPGIFT 3413 335
+#UPPGIFT 3414 556
+#BLANKETTSLUT
+#FIL_SLUT
+```
+
 #### Current vs. Savings
 
 The program algorithm  takes into account the two types of `Product` of transactions: `Savings` and `Current`.

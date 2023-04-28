@@ -1,5 +1,3 @@
-use crate::calculator::Currency;
-use crate::calculator::trade::{Direction, Trade};
 use csv::{ReaderBuilder, Trim};
 use log::info;
 use rust_decimal::Decimal;
@@ -7,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use std::io::Result;
 use std::ops::Neg;
 use std::path::PathBuf;
+
+use crate::calculator::{Currency, Direction, Trade};
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub(crate) struct RevolutRow2023 {

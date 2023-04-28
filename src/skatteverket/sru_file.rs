@@ -182,9 +182,10 @@ mod test {
     use futures::executor::block_on;
     use std::io::Write;
     use std::path::PathBuf;
+    use anyhow::anyhow;
 
     #[test]
-    fn should_write_sru_file() -> Result<(), Box<dyn std::error::Error>> {
+    fn should_write_sru_file() -> anyhow::Result<()> {
         /*
          * Given
          */
@@ -221,7 +222,7 @@ mod test {
             form: "K4-2022P4".to_string(),
             identity: Identity { org_num: "195001011234".to_string() },
             name: None,
-            information: trades_to_sru_information(taxable_trades.iter().collect())?,
+            information: trades_to_sru_information(taxable_trades.iter().collect()).ok_or(anyhow!(""))?,
             system_info: None,
         };
 

@@ -1,7 +1,5 @@
-use crate::calculator::TaxableTrade;
 use anyhow::Result;
 use log::info;
-use reader::{RevolutRow2022, RevolutRow2023};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -9,6 +7,9 @@ mod calculator;
 mod reader;
 mod writer;
 mod skatteverket;
+
+use self::calculator::TaxableTrade;
+use self::reader::{RevolutRow2022, RevolutRow2023};
 
 pub struct Config {
     pub path: PathBuf,
