@@ -78,7 +78,6 @@ impl SruFile {
         name: Option<String>,
     ) -> Option<Self> {
         trades_to_sru_information(trades)
-            .ok()
             .map(|information| {
                 SruFile {
                     form: format!("K4-{}P4", chrono::Utc::now().year() - 1),
@@ -119,7 +118,7 @@ impl SruFile {
 
 fn trades_to_sru_information(
     trades: Vec<&TaxableTrade>,
-) -> Result<Vec<Information>> {
+) -> Option<Vec<Information>> {
     let mut summary_map: HashMap<Currency, (Decimal, Decimal, Decimal)> = HashMap::new();
 
     let mut err = Err(anyhow!("All costs must be cash"));
@@ -133,7 +132,7 @@ fn trades_to_sru_information(
             err = Ok(());
         }
     }
-    err?;
+    err.ok()?;
 
     let mut result = vec![];
 
@@ -150,7 +149,7 @@ fn trades_to_sru_information(
         result.extend(info_vec);
     }
 
-    Ok(result)
+    Some(result)
 }
 
 fn sru_information_vec(
