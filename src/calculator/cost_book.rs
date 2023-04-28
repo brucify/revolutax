@@ -1,10 +1,9 @@
-use crate::calculator::{Currency, TaxableTrade};
-use crate::calculator::money::Money;
-use crate::calculator::trade::Trade;
 use anyhow::{anyhow, Result};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::ops::{Neg, Sub};
+
+use super::{Currency, TaxableTrade, Money, Trade};
 
 #[derive(Debug)]
 pub(crate) struct CostBook {
@@ -230,10 +229,8 @@ impl<'a> Deductor<'a>
 
 #[cfg(test)]
 mod test {
-    use crate::calculator::cost_book::{Cost, CostBook};
-    use crate::calculator::money::Money;
-    use crate::calculator::TaxableTrade;
-    use crate::calculator::trade::{Direction, Trade};
+    use crate::calculator::{CostBook, Money, TaxableTrade, Direction, Trade};
+    use crate::calculator::cost_book::Cost;
     use rust_decimal_macros::dec;
     use std::error::Error;
 

@@ -1,6 +1,7 @@
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use crate::calculator::Currency;
+
+use super::Currency;
 
 #[derive(Debug, PartialEq, Clone)]
 pub(crate) enum Money {

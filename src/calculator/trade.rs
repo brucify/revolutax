@@ -1,7 +1,7 @@
-use crate::calculator::Currency;
-use crate::calculator::money::Money;
 use rust_decimal::Decimal;
 use serde::{Serialize};
+
+use super::{Currency, Money};
 
 #[derive(Debug, PartialEq, Serialize)]
 pub(crate) struct Trade {

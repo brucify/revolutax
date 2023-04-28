@@ -1,8 +1,3 @@
-use crate::calculator::Currency;
-use crate::calculator::cost_book::CostBook;
-use crate::calculator::money::Money;
-use crate::calculator::trade::{Direction, Trade};
-use crate::{Config, skatteverket, writer};
 use anyhow::Result;
 use log::debug;
 use rust_decimal::Decimal;
@@ -10,6 +5,10 @@ use rust_decimal_macros::dec;
 use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 use std::collections::HashSet;
+
+use super::{CostBook, Currency, Direction, Trade, Money};
+use crate::{Config, writer};
+use crate::skatteverket::SruFile;
 
 // 1. Bought Crypto 1 from SEK      (cost in SEK),  sold to SEK      (sales in SEK)
 // 2. Bought Crypto 1 from SEK      (cost in SEK),  sold to Crypto 2 (SEK price as sales)
@@ -141,7 +140,7 @@ impl TaxableTrade {
 
     async fn print_sru_file(taxable_trades: Vec<&TaxableTrade>, org_num: String, name: Option<String>) -> Result<()> {
         let mut res = Ok(());
-        skatteverket::SruFile::try_new(taxable_trades, org_num, name)
+        SruFile::try_new(taxable_trades, org_num, name)
             .map(|sru_file| {
                 let stdout = std::io::stdout();
                 let handle = stdout.lock();
