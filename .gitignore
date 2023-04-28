@@ -1,6 +1,6 @@
 /target
 *.iml
 .idea
-*.csv
+account*.csv
 *.zip
 .DS_Store

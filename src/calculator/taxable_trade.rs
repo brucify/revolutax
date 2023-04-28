@@ -12,10 +12,10 @@ use serde::{Serialize, Serializer};
 #[derive(Debug, PartialEq)]
 pub(crate) struct TaxableTrade {
     date: String,
-    currency: Currency,             // Valutakod
-    amount: Decimal,                // Antal
-    income: Money,                  // Försäljningspris
-    costs: Vec<Money>,              // Omkostnadsbelopp
+    pub(crate) currency: Currency,             // Valutakod
+    pub(crate) amount: Decimal,                // Antal
+    pub(crate) income: Money,                  // Försäljningspris
+    pub(crate) costs: Vec<Money>,              // Omkostnadsbelopp
     net_income: Option<Decimal>,    // Vinst/förlust
 }
 

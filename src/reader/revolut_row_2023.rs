@@ -144,10 +144,10 @@ impl RevolutRow2023 {
 #[cfg(test)]
 mod test {
     use crate::calculator::money::Money;
-    use crate::calculator::taxable_trade::TaxableTrade;
+    use crate::calculator::TaxableTrade;
     use crate::calculator::trade::{Direction, Trade};
     use crate::calculator;
-    use crate::reader::revolut_row_2023::RevolutRow2023;
+    use crate::reader::RevolutRow2023;
     use futures::executor::block_on;
     use rust_decimal_macros::dec;
     use std::error::Error;
