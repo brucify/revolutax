@@ -1,66 +1,109 @@
-use anyhow::Context;
+use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use futures::executor::block_on;
+use log::info;
 
 /// Search for currency exchanges in a Revolut csv file and output a new csv containing the tax information.
 #[derive(Parser)]
+#[command(author, version, about, long_about = None)]
 struct Cli {
-    #[clap(parse(from_os_str), help = "Path to the Revolut transactions_history.csv file that contains transactions.")]
+    #[arg(help = "Path to the Revolut transactions_history.csv file that contains transactions.")]
     path: std::path::PathBuf,
 
-    #[clap(short, long, help = "(2022 csv only) Specify the traded cryptocurrency to report the tax for. Use 'ALL' to show all currencies when using --print-exchanges-only")]
+    #[arg(short, long, help = "(2022 csv only) Specify the traded cryptocurrency to report the tax for. Use 'ALL' to show all currencies when using --print-exchanges-only")]
     currency: Option<String>,
 
-    #[clap(short, long, help = "(2022 csv only) Specify the base fiat currency to report the tax in. Defaults to 'SEK'")]
+    #[arg(short, long, help = "(2022 csv only) Specify the base fiat currency to report the tax in. Defaults to 'SEK'")]
     base_currency: Option<String>,
 
-    #[clap(long, help = "(2022 csv only) Filter the input CSV file to show only items of type 'Exchange', and print to stdout")]
+    #[arg(long, help = "(2022 csv only) Filter the input CSV file to show only items of type 'Exchange', and print to stdout")]
     print_exchanges_only: bool,
 
-    #[clap(long, help = "(2022 csv only) Merge two lines of a currency exchange into a single trade, and print to stdout")]
+    #[arg(long, help = "(2022 csv only) Merge two lines of a currency exchange into a single trade, and print to stdout")]
     print_trades: bool,
 
-    #[clap(long, help = "Specify the year of the Revolut CSV file to process. Defaults to 2023")]
+    #[arg(long, help = "Print taxable trades in the Swedish Tax Agency's SRU file format")]
+    sru_file: bool,
+
+    #[arg(long, help = "Personal/organisational number to print in the SRU file")]
+    sru_org_num: Option<String>,
+
+    #[arg(long, help = "Name to print in the SRU file")]
+    sru_name: Option<String>,
+
+    #[arg(long, help = "Specify the year of the Revolut CSV file to process. Defaults to 2023")]
     csv_year: Option<u16>,
 }
+
+impl Cli {
+    fn to_config(self) -> Result<cryptotax::Config> {
+        let Cli {
+            path,
+            currency,
+            base_currency,
+            print_exchanges_only,
+            print_trades,
+            sru_file,
+            sru_org_num,
+            sru_name,
+            csv_year,
+        } = self;
+
+        let sru_file_config = if sru_file {
+            Some(cryptotax::SruFileConfig {
+                sru_org_num: sru_org_num.ok_or(anyhow!("--sru_org_num <SRU_ORG_NUM> is mandatory if --sru_file is given"))?,
+                sru_name,
+            })
+        } else {
+            None
+        };
+
+        let config = cryptotax::Config {
+            path,
+            currency: currency.unwrap_or("ALL".to_string()),
+            base_currency: base_currency.unwrap_or("SEK".to_string()),
+            print_exchanges_only,
+            print_trades,
+            sru_file_config,
+            csv_year: csv_year.unwrap_or(2023),
+        };
+
+        Ok(config)
+    }
+}
+
 
 fn main() {
     env_logger::init();
     let args = Cli::parse();
-    let csv_year: u16 = args.csv_year.unwrap_or(2023);
-    let currency: String = args.currency.unwrap_or("ALL".to_string());
-    let base_currency: String = args.base_currency.unwrap_or("SEK".to_string());
+    let config = args.to_config().with_context(|| format!("Invalid command line flags")).unwrap();
 
-    match (csv_year, args.print_exchanges_only, args.print_trades) {
-        (2023, _, _) => {
-            block_on(cryptotax::calculate_tax_2023(&args.path))
-                .with_context(|| format!("Could not calculate tax from file `{:?}`", &args.path))
+    match (config.csv_year, config.print_exchanges_only, config.print_trades) {
+        (2022, true, _) => {
+            match config.currency.as_str() {
+                "ALL" => block_on(cryptotax::print_exchanges(&config.path)),
+                _ => block_on(cryptotax::print_exchanges_in_currency(&config.path, &config.currency)),
+            }
+                .with_context(|| format!("Could not read transactions from file `{:?}`", &config.path))
                 .unwrap();
         },
-        (2022, true, _) => {
-            match currency.as_str() {
-                "ALL" =>
-                    block_on(cryptotax::print_exchanges(&args.path))
-                        .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
-                        .unwrap(),
-                _ =>
-                    block_on(cryptotax::print_exchanges_in_currency(&args.path, &currency))
-                        .with_context(|| format!("Could not read transactions from file `{:?}`", &args.path))
-                        .unwrap(),
-            }
-        },
         (2022, false, true) => {
-            block_on(cryptotax::merge_exchanges(&args.path, &currency))
-                .with_context(|| format!("Could not merge exchanges from file `{:?}`", &args.path))
+            block_on(cryptotax::merge_exchanges(&config.path, &config.currency))
+                .with_context(|| format!("Could not merge exchanges from file `{:?}`", &config.path))
                 .unwrap();
         },
         (2022, false, false) => {
-            block_on(cryptotax::calculate_tax_2022(&args.path, &currency, &base_currency))
-                .with_context(|| format!("Could not calculate tax from file `{:?}`", &args.path))
+            block_on(cryptotax::calculate_tax_2022(&config))
+                .with_context(|| format!("Could not calculate tax from file `{:?}`", &config.path))
+                .unwrap();
+        },
+        (2023, _, _) => {
+            block_on(cryptotax::calculate_tax_2023(&config))
+                .with_context(|| format!("Could not calculate tax from file `{:?}`", &config.path))
                 .unwrap();
         },
         _ => {
-            println!("Unknown csv year")
+            info!("Unknown csv year")
         },
     }
 }

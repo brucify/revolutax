@@ -1,12 +1,28 @@
+use std::collections::HashSet;
 use crate::calculator::Currency;
 use crate::calculator::money::Money;
-use crate::calculator::taxable_trade::TaxableTrade;
+use crate::calculator::TaxableTrade;
 use crate::calculator::trade::{Direction, Trade};
+use anyhow::{anyhow, Result};
 use log::debug;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
-use std::io::Result;
 use std::ops::{Neg, Sub};
+
+pub(crate) async fn all_taxable_trades(trades: &Vec<Trade>) -> Vec<TaxableTrade> {
+    let mut unique_pairs: HashSet<(Currency, Currency)> = HashSet::new();
+    for t in trades {
+        let pair = (t.paid_currency.clone(), t.exchanged_currency.clone());
+        unique_pairs.insert(pair);
+    }
+
+    let mut taxable_trades: Vec<TaxableTrade> = vec![];
+    for pair in unique_pairs {
+        let result = self::taxable_trades(&trades, &pair.0, &pair.1).await.unwrap();
+        taxable_trades.extend(result);
+    }
+    taxable_trades
+}
 
 pub(crate) async fn taxable_trades(trades: &Vec<Trade>, currency: &Currency, base_currency: &Currency) -> Result<Vec<TaxableTrade>> {
     let book = CostBook::new(currency.clone(), base_currency.clone());
@@ -132,7 +148,7 @@ impl CostBook {
 
         match deductor.remaining.eq(&dec!(0)) {
             true => Ok(deducted),
-            false => Err(std::io::Error::from(std::io::ErrorKind::InvalidData)) // Not enough costs to deduct from
+            false => Err(anyhow!("Not enough costs to deduct from"))
         }
     }
 
@@ -256,7 +272,7 @@ impl<'a> Deductor<'a>
 mod test {
     use crate::calculator::cost_book::{Cost, CostBook};
     use crate::calculator::money::Money;
-    use crate::calculator::taxable_trade::TaxableTrade;
+    use crate::calculator::TaxableTrade;
     use crate::calculator::trade::{Direction, Trade};
     use rust_decimal_macros::dec;
     use std::error::Error;
