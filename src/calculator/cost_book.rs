@@ -1,67 +1,20 @@
-use std::collections::HashSet;
-use crate::calculator::Currency;
+use crate::calculator::{Currency, TaxableTrade};
 use crate::calculator::money::Money;
-use crate::calculator::TaxableTrade;
-use crate::calculator::trade::{Direction, Trade};
+use crate::calculator::trade::Trade;
 use anyhow::{anyhow, Result};
-use log::debug;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use std::ops::{Neg, Sub};
 
-pub(crate) async fn all_taxable_trades(trades: &Vec<Trade>) -> Vec<TaxableTrade> {
-    let mut unique_pairs: HashSet<(Currency, Currency)> = HashSet::new();
-
-    for t in trades {
-        let pair = (t.paid_currency.clone(), t.exchanged_currency.clone());
-        unique_pairs.insert(pair);
-    }
-
-    let mut taxable_trades: Vec<TaxableTrade> = vec![];
-    for pair in unique_pairs {
-        let result = self::taxable_trades(&trades, &pair.0, &pair.1).await.unwrap();
-        taxable_trades.extend(result);
-    }
-
-    taxable_trades
-}
-
-pub(crate) async fn taxable_trades(trades: &Vec<Trade>, currency: &Currency, base_currency: &Currency) -> Result<Vec<TaxableTrade>> {
-    let book = CostBook::new(currency.clone(), base_currency.clone());
-    let (taxable_trades, book) =
-        trades.iter()
-            .fold((vec![], book), |(mut acc, mut book), trade| {
-                let currency_match =
-                    trade.paid_currency.eq(&book.currency)
-                        && trade.exchanged_currency.eq(&book.base_currency);
-                if currency_match {
-                    match trade.direction {
-                        Direction::Buy =>
-                            book.add_buy(trade),
-                        Direction::Sell => {
-                            let taxable_trade = book.add_sell(trade).unwrap();
-                            acc.push(taxable_trade);
-                        }
-                    }
-                }
-                (acc, book)
-            });
-    debug!("Remaining costs for {:?}:", book.currency);
-    book.costs.iter().for_each(|c| debug!("{:?}", c));
-    debug!("Taxable transactions:");
-    taxable_trades.iter().for_each(|t| debug!("{:?}", t));
-    Ok(taxable_trades)
-}
-
 #[derive(Debug)]
-struct CostBook {
-    base_currency: Currency,
-    currency: Currency,
-    costs: Vec<Cost>,
+pub(crate) struct CostBook {
+    pub(crate) base_currency: Currency,
+    pub(crate) currency: Currency,
+    pub(crate) costs: Vec<Cost>,
 }
 
 impl CostBook {
-    fn new(currency: Currency, base_currency: Currency) -> CostBook {
+    pub(crate) fn new(currency: Currency, base_currency: Currency) -> CostBook {
         CostBook {
             base_currency,
             currency,
@@ -69,7 +22,7 @@ impl CostBook {
         }
     }
 
-    fn add_buy(&mut self, trade: &Trade) {
+    pub(crate) fn add_buy(&mut self, trade: &Trade) {
         match trade.to_money(&self.base_currency) {
             Money::Cash(cash) => {
                 self.find_and_add_cash(
@@ -90,7 +43,7 @@ impl CostBook {
         }
     }
 
-    fn add_sell(&mut self, trade: &Trade) -> Result<TaxableTrade> {
+    pub(crate) fn add_sell(&mut self, trade: &Trade) -> Result<TaxableTrade> {
         let income = trade.to_money(&self.base_currency);
 
         let costs =
@@ -163,7 +116,7 @@ impl CostBook {
 
 
 #[derive(Debug, PartialEq, Clone)]
-struct Cost {
+pub(crate) struct Cost {
     paid_amount: Decimal,
     exchanged: Money,
     is_vault: bool,
