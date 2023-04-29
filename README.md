@@ -92,6 +92,7 @@ transactions.
 * `--sru-file`                       Print taxable trades in the Swedish Tax Agency's SRU file format
 * `--sru-org-num <SRU_ORG_NUM>`      Personal/organisational number to print in the SRU file
 * `--sru-org-name <SRU_ORG_NAME>`    Name to print in the SRU file
+* `--sru-sum`                        In the SRU file summarize taxable trades by currency
 * `--year-traded <YEAR_TRADED>`      Only include taxable trades from this year
 * `--csv-version <CSV_VERSION>`      Specify the year of the Revolut CSV file to process. Defaults to 2023
 * `-h, --help`                           Print help

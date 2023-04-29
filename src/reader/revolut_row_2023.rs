@@ -232,7 +232,7 @@ mod test {
          */
         let mut iter = taxable_trades.into_iter();
         assert_eq!(iter.next(), Some(TaxableTrade::new(
-            "2023-01-02 10:00:00".to_string(),
+            Some("2023-01-02 10:00:00".to_string()),
             "EOS".to_string(),
                 dec!(-30),
             Money::new_cash("SEK".to_string(), dec!(394.86)),
@@ -240,7 +240,7 @@ mod test {
             Some(dec!(-214.29))
         )));
         assert_eq!(iter.next(), Some(TaxableTrade::new(
-            "2023-04-04 11:00:00".to_string(),
+            Some("2023-04-04 11:00:00".to_string()),
             "EOS".to_string(),
             dec!(-50),
             Money::new_cash("SEK".to_string(), dec!(594.86)),
@@ -248,7 +248,7 @@ mod test {
             Some(dec!(-414.79))
         )));
         assert_eq!(iter.next(), Some(TaxableTrade::new(
-            "2023-05-06 10:00:00".to_string(),
+            Some("2023-05-06 10:00:00".to_string()),
             "EOS".to_string(),
             dec!(-25),
             Money::new_cash("SEK".to_string(), dec!(495.75)),

@@ -4,3 +4,4 @@
 account*.csv
 *.zip
 .DS_Store
+*.sru

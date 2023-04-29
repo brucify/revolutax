@@ -55,7 +55,7 @@ impl CostBook {
         
         Ok(
             TaxableTrade::new(
-                trade.date.clone(),
+                Some(trade.date.clone()),
                 trade.paid_currency.clone(),
                 trade.paid_amount,
                 income,
@@ -351,7 +351,7 @@ mod test {
          * Then
          */
         assert_eq!(x, TaxableTrade::new(
-            "2022-05-05 05:01:12".to_string(),
+            Some("2022-05-05 05:01:12".to_string()),
             "DOGE".to_string(),
             dec!(-50),
             Money::new_cash("SEK".to_string(), dec!(200.63)),
@@ -370,7 +370,7 @@ mod test {
         };
         let x = book.add_sell(&trade)?;
         assert_eq!(x, TaxableTrade::new(
-            "2022-07-06 06:02:13".to_string(),
+            Some("2022-07-06 06:02:13".to_string()),
             "DOGE".to_string(),
             dec!(-50),
             Money::new_coupon("BTC".to_string(), dec!(0.0000201), "2022-07-06 06:02:13".to_string()),
@@ -389,7 +389,7 @@ mod test {
         };
         let x = book.add_sell(&trade)?;
         assert_eq!(x, TaxableTrade::new(
-            "2022-08-07 07:03:14".to_string(),
+            Some("2022-08-07 07:03:14".to_string()),
             "DOGE".to_string(),
             dec!(-1250),
             Money::new_coupon("BCH".to_string(), dec!(325), "2022-08-07 07:03:14".to_string()),

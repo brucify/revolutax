@@ -2,13 +2,10 @@
  * https://www.skatteverket.se/download/18.6e8a1495181dad540843eb2/1665748259651/SKV269_28_(2022P4).pdf
  */
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use chrono::Datelike;
-use log::debug;
 use rust_decimal::Decimal;
-use rust_decimal_macros::dec;
 use serde::Serialize;
-use std::collections::HashMap;
 use std::io::Write;
 
 use crate::calculator::{Currency, TaxableTrade};
@@ -26,8 +23,9 @@ pub(crate) struct SruFile {
 
     // #NAMN
     // <Namn> Namnet på dig so lämnar uppgifterna.Om
-    // uppgiftelämnas visas den sedan på mottagningskvittensen. Längden på fältet får vara högst 250 tecken långt, dock används endast position 1 - 25 på
-    // mottagningskvittensen.
+    // uppgiftelämnas visas den sedan på mottagningskvittensen. Längden på
+    // fältet får vara högst 250 tecken långt, dock används endast position
+    // 1 - 25 på mottagningskvittensen.
     name: Option<String>,
 
     // #UPPGIFT
@@ -73,11 +71,11 @@ struct Information {
 
 impl SruFile {
     pub(crate) fn try_new(
-        trades: Vec<&TaxableTrade>,
+        taxable_trades: Vec<&TaxableTrade>,
         org_num: String,
         name: Option<String>,
     ) -> Option<Self> {
-        trades_to_sru_information(trades)
+        trades_to_sru_information(taxable_trades)
             .map(|information| {
                 SruFile {
                     form: format!("K4-{}P4", chrono::Utc::now().year() - 1),
@@ -98,7 +96,9 @@ impl SruFile {
         writeln!(
             handle,
             "#IDENTITET {} {} {}",
-            identity.org_num, now.format("%Y%m%d").to_string(), now.format("%H%M%S").to_string()
+            identity.org_num,
+            now.format("%Y%m%d").to_string(),
+            now.format("%H%M%S").to_string(),
         )?;
 
         if let Some(name) = &self.name {
@@ -116,36 +116,25 @@ impl SruFile {
     }
 }
 
-fn trades_to_sru_information(
-    trades: Vec<&TaxableTrade>,
-) -> Option<Vec<Information>> {
-    let mut summary_map: HashMap<Currency, (Decimal, Decimal, Decimal)> = HashMap::new();
-
-    let mut err = Err(anyhow!("All costs must be cash"));
-    for trade in trades {
-        if trade.costs.iter().all(|c| c.is_cash()) {
-            let (amount, income, costs) = summary_map.entry(trade.currency.clone())
-                .or_insert((dec!(0), dec!(0), dec!(0)));
-            *amount += trade.amount;
-            *income += trade.income.amount();
-            *costs += trade.costs.iter().map(|x| x.amount()).sum::<Decimal>();
-            err = Ok(());
-        }
-    }
-    err.ok()?;
-
+fn trades_to_sru_information(taxable_trades: Vec<&TaxableTrade>) -> Option<Vec<Information>> {
     let mut result = vec![];
 
-    for (i, (currency, (amount, income, costs))) in summary_map.into_iter().enumerate() {
-        let net_income = income + costs;
-        debug!("i: {}", i);
-        debug!("Currency: {}", currency);
-        debug!("Total Amount: {}", amount);
-        debug!("Total Income: {}", income);
-        debug!("Total Costs: {}", costs);
-        debug!("Net Income: {}", income + costs);
-        debug!("-----------------------");
-        let info_vec = sru_information_vec(i+1, currency, amount, income, costs, net_income);
+    for (i, taxable_trade) in taxable_trades.into_iter().enumerate() {
+        let currency = taxable_trade.currency.clone();
+        let amount = taxable_trade.amount;
+        let income  = taxable_trade.income.amount();
+        let costs = taxable_trade.sum_cash_costs()?;
+        let net_income = taxable_trade.net_income?;
+
+        let info_vec =
+            sru_information_vec(
+                i+1,
+                currency,
+                amount,
+                income,
+                costs,
+                net_income
+            );
         result.extend(info_vec);
     }
 

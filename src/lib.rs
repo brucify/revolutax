@@ -25,6 +25,7 @@ pub struct Config {
 pub struct SruFileConfig {
     pub sru_org_num: String,
     pub sru_org_name: Option<String>,
+    pub sru_sum: bool,
 }
 
 /// Reads the transactions with type `Exchange` from the path and prints the results to
@@ -91,11 +92,16 @@ pub async fn calculate_tax_v2022(config: &Config) -> Result<()> {
     info!("Done converting to transactions. Elapsed: {:.2?}", now.elapsed());
 
     let now = Instant::now();
-    let taxable_trades = TaxableTrade::taxable_trades(&trades, &config.currency, &config.base_currency).await?;
+    let taxable_trades =
+        TaxableTrade::taxable_trades(
+            &trades,
+            &config.currency,
+            &config.base_currency
+        ).await?;
     info!("Done calculating taxes. Elapsed: {:.2?}", now.elapsed());
 
     let now = Instant::now();
-    TaxableTrade::print_taxable_trades(&taxable_trades, config).await?;
+    TaxableTrade::print_taxable_trades(taxable_trades.iter().collect(), config).await?;
     info!("Done printing results. Elapsed: {:.2?}", now.elapsed());
 
     Ok(())
@@ -107,11 +113,11 @@ pub async fn calculate_tax_v2023(config: &Config) -> Result<()> {
     info!("Done reading csv file. Elapsed: {:.2?}", now.elapsed());
 
     let now = Instant::now();
-    let taxable_trades = TaxableTrade::all_taxable_trades(&trades).await;
+    let taxable_trades = TaxableTrade::taxable_trades_all_currencies(&trades).await;
     info!("Done calculating taxes. Elapsed: {:.2?}", now.elapsed());
 
     let now = Instant::now();
-    TaxableTrade::print_taxable_trades(&taxable_trades, config).await?;
+    TaxableTrade::print_taxable_trades(taxable_trades.iter().collect(), config).await?;
     info!("Done printing results. Elapsed: {:.2?}", now.elapsed());
 
     Ok(())
