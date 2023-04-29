@@ -31,8 +31,8 @@ To generate an SRU file for the Swedish Tax Agency, give the `--sru-file` flag:
         --sru-file \
         --sru-org-num 195012310123 \
         --sru-org-name "Svea Specimen" \
-        --sru-sum \
         --year-traded 2023 \
+        --sum \
         revolut-2023.csv > BLANKETTER.sru
 
 Here is an example input CSV file `account_statement.csv`:
@@ -87,17 +87,20 @@ transactions.
 
 ### Available Options
 
-* `-c, --currency <CURRENCY>`            (2022 csv only) Specify the traded cryptocurrency to report the tax for. Use 'ALL' to show all currencies when using --print-exchanges-only
-* `-b, --base-currency <BASE_CURRENCY>`  (2022 csv only) Specify the base fiat currency to report the tax in. Defaults to 'SEK'
-* `--print-exchanges-only`           (2022 csv only) Filter the input CSV file to show only items of type 'Exchange', and print to stdout
-* `--print-trades`                   (2022 csv only) Merge two lines of a currency exchange into a single trade, and print to stdout
-* `--sru-file`                       Print taxable trades in the Swedish Tax Agency's SRU file format
-* `--sru-org-num <SRU_ORG_NUM>`      Personal/organisational number to print in the SRU file
-* `--sru-org-name <SRU_ORG_NAME>`    Name to print in the SRU file
-* `--sru-sum`                        In the SRU file summarize taxable trades by currency ("[genomsnittsmetoden](https://skatteverket.se/privat/skatter/vardepapper/andratillgangar/kryptovalutor.4.15532c7b1442f256bae11b60.html?q=kryptovalutor)")
-* `--year-traded <YEAR_TRADED>`      Only include taxable trades from this year
-* `--csv-version <CSV_VERSION>`      Specify the year of the Revolut CSV file to process. Defaults to 2023
-* `-h, --help`                           Print help
+FLAGS:
+* `--print-exchanges-only`   (2022 csv only)Filter the input CSV file to show only items of type 'Exchange', and print to stdout
+* `--print-trades`           (2022 csv only) Merge two lines of a currency exchange into a single trade, and print to stdout
+* `--sru-file`               Print taxable trades in the Swedish Tax Agency's SRU file format
+* `--sum`                    Summarize taxable trades by currency ("[genomsnittsmetoden](https://skatteverket.se/privat/skatter/vardepapper/andratillgangar/kryptovalutor.4.15532c7b1442f256bae11b60.html?q=kryptovalutor)")
+* `-h, --help`                   Print help
+
+OPTIONS:
+* `-c, --currency <CURRENCY>`                  (2022 csv only) Specify the traded cryptocurrency to report the tax for. Use 'ALL' to show all currencies when using --print-exchanges-only
+* `-b, --base-currency <BASE_CURRENCY>`        (2022 csv only) Specify the base fiat currency to report the tax in. Defaults to 'SEK'
+* `--sru-org-name <SRU_ORG_NAME>`          Name to print in the SRU file
+* `--sru-org-num <SRU_ORG_NUM>`            Personal/organisational number to print in the SRU file
+* `--csv-version <CSV_VERSION>`            Specify the year of the Revolut CSV file to process. Defaults to 2023
+* `--year-traded <YEAR_TRADED>`            Only include taxable trades from this year
 
 ## License
 ```

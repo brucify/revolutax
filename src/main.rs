@@ -31,8 +31,8 @@ struct Cli {
     #[arg(long, help = "Name to print in the SRU file")]
     sru_org_name: Option<String>,
 
-    #[arg(long, help = "In the SRU file summarize taxable trades by currency (\"genomsnittsmetoden\")")]
-    sru_sum: bool,
+    #[arg(long, help = "Summarize taxable trades by currency (\"genomsnittsmetoden\")")]
+    sum: bool,
 
     #[arg(long, help = "Only include taxable trades from this year")]
     year_traded: Option<u16>,
@@ -52,7 +52,7 @@ impl Cli {
             sru_file,
             sru_org_num,
             sru_org_name,
-            sru_sum,
+            sum,
             year_traded,
             csv_version,
         } = self;
@@ -61,7 +61,6 @@ impl Cli {
             Some(cryptotax::SruFileConfig {
                 sru_org_num: sru_org_num.ok_or(anyhow!("--sru_org_num <SRU_ORG_NUM> is mandatory if --sru_file is given"))?,
                 sru_org_name,
-                sru_sum,
             })
         } else {
             None
@@ -75,6 +74,7 @@ impl Cli {
             print_trades,
             sru_file_config,
             year_traded,
+            sum,
             csv_version: csv_version.unwrap_or(2023),
         };
 

@@ -17,7 +17,7 @@ pub(crate) struct SruFile {
 
 impl SruFile {
     pub(crate) fn try_new(
-        taxable_trades: Vec<&TaxableTrade>,
+        taxable_trades: &Vec<TaxableTrade>,
         org_num: String,
         name: Option<String>,
     ) -> Option<Self> {
@@ -107,7 +107,7 @@ impl Form {
     }
 
     pub(crate) fn try_from_taxable_trades(
-        taxable_trades: Vec<&TaxableTrade>,
+        taxable_trades: &Vec<TaxableTrade>,
         org_num: String,
         name: Option<String>,
     ) -> Option<Vec<Self>> {
@@ -127,7 +127,7 @@ impl Form {
             let currency = taxable_trade.currency.clone();
             let amount = taxable_trade.amount;
             let income = taxable_trade.income.amount();
-            let costs = taxable_trade.sum_cash_costs()?;
+            let costs = taxable_trade.sum_cash_amount()?;
             let net_income = taxable_trade.net_income?;
 
             if current_form.information_groups.len() < 7 {
@@ -247,10 +247,10 @@ mod test {
             TaxableTrade::taxable_trades(&trades, &"EOS".to_string(), &"SEK".to_string()).await
         })?;
 
-        let taxable_trades = TaxableTrade::sum_by_currency(&taxable_trades.iter().collect())?;
+        let taxable_trades = TaxableTrade::try_sum_cash_amount_by_currency(&taxable_trades)?;
 
         let sru_file = SruFile::try_new(
-            taxable_trades.iter().collect(),
+            &taxable_trades,
             "195001011234".to_string(),
             None
         ).ok_or(anyhow!(""))?;
@@ -269,7 +269,7 @@ mod test {
 
         assert!(output.starts_with("#BLANKETT K4-2022P4\n"));
         assert!(output.contains("#IDENTITET 195001011234 "));
-        assert!(output.contains("#UPPGIFT 7014 1"));
+        assert!(output.contains("#UPPGIFT 7014 1\n"));
         assert!(output.contains("#UPPGIFT 3410 105\n"));
         assert!(output.contains("#UPPGIFT 3411 EOS\n"));
         assert!(output.contains("#UPPGIFT 3412 1485\n"));

@@ -60,7 +60,7 @@ impl TaxableTrade {
     }
 
     fn costs_to_string(&self) -> String {
-        if let Some(sum) = self.sum_cash_costs() {
+        if let Some(sum) = self.sum_cash_amount() {
             sum.to_string()
         } else {
             self.costs.iter()
@@ -68,7 +68,7 @@ impl TaxableTrade {
         }
     }
 
-    pub(crate) fn sum_cash_costs(&self) -> Option<Decimal> {
+    pub(crate) fn sum_cash_amount(&self) -> Option<Decimal> {
         if self.costs.iter().all(|c| c.is_cash()) {
             let sum =
                 self.costs.iter()
@@ -136,10 +136,10 @@ impl TaxableTrade {
     }
 
     pub(crate) async fn print_taxable_trades(
-        taxable_trades: Vec<&TaxableTrade>,
+        taxable_trades: Vec<TaxableTrade>,
         config: &Config
     ) -> Result<()> {
-        let taxable_trades: Vec<&TaxableTrade> =
+        let taxable_trades =
             taxable_trades.into_iter()
                 .filter(|t| {
                     config.year_traded
@@ -153,17 +153,16 @@ impl TaxableTrade {
                 })
                 .collect();
 
-        if let Some(sru_conf) = &config.sru_file_config {
-            let sum = TaxableTrade::sum_by_currency(&taxable_trades)?;
-
-            let taxable_trades = if sru_conf.sru_sum {
-                sum.iter().collect()
+        let taxable_trades =
+            if config.sum {
+                TaxableTrade::try_sum_cash_amount_by_currency(&taxable_trades)?
             } else {
                 taxable_trades
             };
 
+        if let Some(sru_conf) = &config.sru_file_config {
             Self::print_sru_file(
-                taxable_trades,
+                &taxable_trades,
                 sru_conf.sru_org_num.clone(),
                 sru_conf.sru_org_name.clone()
             ).await?;
@@ -175,7 +174,7 @@ impl TaxableTrade {
     }
 
     async fn print_sru_file(
-        taxable_trades: Vec<&TaxableTrade>,
+        taxable_trades: &Vec<TaxableTrade>,
         org_num: String,
         name: Option<String>
     ) -> Result<()> {
@@ -191,13 +190,13 @@ impl TaxableTrade {
         res
     }
 
-    pub(crate) fn sum_by_currency(taxable_trades: &Vec<&TaxableTrade>) -> Result<Vec<TaxableTrade>> {
+    pub(crate) fn try_sum_cash_amount_by_currency(taxable_trades: &Vec<TaxableTrade>) -> Result<Vec<TaxableTrade>> {
         let mut summary_map: HashMap<Currency, (Decimal, Decimal, Decimal)> = HashMap::new();
 
         let mut err = Ok(());
 
         for trade in taxable_trades {
-            if let Some(costs) = trade.sum_cash_costs() {
+            if let Some(costs) = trade.sum_cash_amount() {
                 let (acc_amount, acc_income, acc_costs) =
                     summary_map.entry(trade.currency.clone())
                         .or_insert((dec!(0), dec!(0), dec!(0)));
