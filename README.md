@@ -1,4 +1,4 @@
-# cryptotax
+# revolutax
 
 A Rust CLI tool for calculating taxes on cryptocurrencies traded on Revolut. It reads the 
 account statement CSV file from Revolut and generates a new CSV file summarizing the taxable

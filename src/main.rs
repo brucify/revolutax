@@ -3,7 +3,7 @@ use clap::Parser;
 use futures::executor::block_on;
 use log::error;
 
-/// Search for currency exchanges in a Revolut csv file and output a new csv containing the tax information.
+/// Calculate taxable trades in a Revolut account statement CSV file and output a CSV file or SRU file.
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -42,7 +42,7 @@ struct Cli {
 }
 
 impl Cli {
-    fn to_config(self) -> Result<cryptotax::Config> {
+    fn to_config(self) -> Result<revolutax::Config> {
         let Cli {
             path,
             currency,
@@ -58,7 +58,7 @@ impl Cli {
         } = self;
 
         let sru_file_config = if sru_file {
-            Some(cryptotax::SruFileConfig {
+            Some(revolutax::SruFileConfig {
                 sru_org_num: sru_org_num.ok_or(anyhow!("--sru_org_num <SRU_ORG_NUM> is mandatory if --sru_file is given"))?,
                 sru_org_name,
             })
@@ -66,7 +66,7 @@ impl Cli {
             None
         };
 
-        let config = cryptotax::Config {
+        let config = revolutax::Config {
             path,
             currency: currency.unwrap_or("ALL".to_string()),
             base_currency: base_currency.unwrap_or("SEK".to_string()),
@@ -91,24 +91,24 @@ fn main() {
     match (config.csv_version, config.print_exchanges_only, config.print_trades) {
         (2022, true, _) => {
             match config.currency.as_str() {
-                "ALL" => block_on(cryptotax::print_exchanges(&config.path)),
-                _ => block_on(cryptotax::print_exchanges_in_currency(&config.path, &config.currency)),
+                "ALL" => block_on(revolutax::print_exchanges(&config.path)),
+                _ => block_on(revolutax::print_exchanges_in_currency(&config.path, &config.currency)),
             }
                 .with_context(|| format!("Could not read transactions from file `{:?}`", &config.path))
                 .unwrap();
         },
         (2022, false, true) => {
-            block_on(cryptotax::merge_exchanges(&config.path, &config.currency))
+            block_on(revolutax::merge_exchanges(&config.path, &config.currency))
                 .with_context(|| format!("Could not merge exchanges from file `{:?}`", &config.path))
                 .unwrap();
         },
         (2022, false, false) => {
-            block_on(cryptotax::calculate_tax_v2022(&config))
+            block_on(revolutax::calculate_tax_v2022(&config))
                 .with_context(|| format!("Could not calculate tax from file `{:?}`", &config.path))
                 .unwrap();
         },
         (2023, _, _) => {
-            block_on(cryptotax::calculate_tax_v2023(&config))
+            block_on(revolutax::calculate_tax_v2023(&config))
                 .with_context(|| format!("Could not calculate tax from file `{:?}`", &config.path))
                 .unwrap();
         },
