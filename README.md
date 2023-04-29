@@ -31,6 +31,7 @@ To generate an SRU file for the Swedish Tax Agency, give the `--sru-file` flag:
         --sru-file \
         --sru-org-num 195012310123 \
         --sru-org-name "Svea Specimen" \
+        --sru-sum \
         --year-traded 2023 \
         revolut-2023.csv > BLANKETTER.sru
 
@@ -60,12 +61,13 @@ This report shows the following information for each transaction:
 * Cost (`Omkostnadsbelopp`): The cost of the transaction, calculated in the base currency (SEK).
 * Net Income (`Vinst/förlust`): The net income generated from the transaction, calculated by subtracting the cost from the income.
 
-With `--sru-file` flag, the output SRU file `BLANKETTER.sru` looks like this:
+With `--sru-file` flag, the program generates an SRU file `BLANKETTER.sru`:
 
 ```
 #BLANKETT K4-2022P4
 #IDENTITET 195012310123 20230428 222030
 #NAMN Svea Specimen
+#UPPGIFT 7014 1
 #UPPGIFT 3410 55
 #UPPGIFT 3411 EOS
 #UPPGIFT 3412 891
@@ -92,7 +94,7 @@ transactions.
 * `--sru-file`                       Print taxable trades in the Swedish Tax Agency's SRU file format
 * `--sru-org-num <SRU_ORG_NUM>`      Personal/organisational number to print in the SRU file
 * `--sru-org-name <SRU_ORG_NAME>`    Name to print in the SRU file
-* `--sru-sum`                        In the SRU file summarize taxable trades by currency
+* `--sru-sum`                        In the SRU file summarize taxable trades by currency ("[genomsnittsmetoden](https://skatteverket.se/privat/skatter/vardepapper/andratillgangar/kryptovalutor.4.15532c7b1442f256bae11b60.html?q=kryptovalutor)")
 * `--year-traded <YEAR_TRADED>`      Only include taxable trades from this year
 * `--csv-version <CSV_VERSION>`      Specify the year of the Revolut CSV file to process. Defaults to 2023
 * `-h, --help`                           Print help

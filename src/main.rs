@@ -31,7 +31,7 @@ struct Cli {
     #[arg(long, help = "Name to print in the SRU file")]
     sru_org_name: Option<String>,
 
-    #[arg(long, help = "In the SRU file summarize taxable trades by currency")]
+    #[arg(long, help = "In the SRU file summarize taxable trades by currency (\"genomsnittsmetoden\")")]
     sru_sum: bool,
 
     #[arg(long, help = "Only include taxable trades from this year")]

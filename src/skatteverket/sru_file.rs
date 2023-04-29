@@ -12,6 +12,37 @@ use crate::calculator::{Currency, TaxableTrade};
 
 #[derive(Debug, Serialize)]
 pub(crate) struct SruFile {
+    forms: Vec<Form>,
+}
+
+impl SruFile {
+    pub(crate) fn try_new(
+        taxable_trades: Vec<&TaxableTrade>,
+        org_num: String,
+        name: Option<String>,
+    ) -> Option<Self> {
+        Form::try_from_taxable_trades(taxable_trades, org_num, name)
+            .map(|forms|
+                SruFile {
+                    forms
+                }
+            )
+    }
+
+    pub(crate) fn write(&self, mut handle: impl Write) -> Result<()> {
+        for (i, form) in self.forms.iter().enumerate() {
+            form.write(i + 1, &mut handle)?;
+        }
+
+        // #FIL_SLUT Markerar att filen slutar.
+        writeln!(handle, "#FIL_SLUT")?;
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub(crate) struct Form {
     // #BLANKETT
     // <BlankettTyp> Anger vilket blankettblock
     // som avses. Vid inlämning får värden enligt kolumnen ”Blankettblock” i
@@ -29,15 +60,99 @@ pub(crate) struct SruFile {
     name: Option<String>,
 
     // #UPPGIFT
-    information: Vec<Information>,
+    information_groups: Vec<InformationGroup>,
 
     // #SYSTEMINFO
     // Används till uppgiftslämnarens egna uppgifter. Endast en
     // post får lämnas. Skatteverket läser inte in posten.
     system_info: Option<String>,
+}
 
-    // #BLANKETTSLUT Markerar att blankettblocket slutar.
-    // #FIL_SLUT Markerar att filen slutar.
+impl Form {
+    pub(crate) fn write(&self, i: usize, mut handle: impl Write) -> Result<()> {
+        writeln!(handle, "#BLANKETT {}", self.form)?;
+
+        let now = chrono::Utc::now();
+
+        let identity = &self.identity;
+        writeln!(
+            handle,
+            "#IDENTITET {} {} {}",
+            identity.org_num,
+
+            // <DatFramst> Datum för framställande av uppgifterna.
+            // Anges i formen SSÅÅMMDD.
+            now.format("%Y%m%d").to_string(),
+
+            // <TidFramst> Klockslag för framställande av uppgifterna.
+            // Anges i formen TTMMSS.
+            now.format("%H%M%S").to_string(),
+        )?;
+
+        if let Some(name) = &self.name {
+            writeln!(handle, "#NAMN {}", name)?;
+        }
+
+        writeln!(handle, "#UPPGIFT 7014 {}", i)?;
+
+        let information: Vec<&Information> = self.information_groups.iter().flatten().collect();
+        for info in information {
+            writeln!(handle, "#UPPGIFT {} {}", info.field_code, info.field_value)?;
+        }
+
+        // #BLANKETTSLUT Markerar att blankettblocket slutar.
+        writeln!(handle, "#BLANKETTSLUT")?;
+
+        Ok(())
+    }
+
+    pub(crate) fn try_from_taxable_trades(
+        taxable_trades: Vec<&TaxableTrade>,
+        org_num: String,
+        name: Option<String>,
+    ) -> Option<Vec<Self>> {
+        let year = chrono::Utc::now().year() - 1;
+
+        let mut forms = vec![];
+
+        let mut current_form = Form {
+            form: format!("K4-{}P4", year),
+            identity: Identity { org_num: org_num.clone() },
+            name: name.clone(),
+            information_groups: vec![],
+            system_info: None,
+        };
+
+        for taxable_trade in taxable_trades {
+            let currency = taxable_trade.currency.clone();
+            let amount = taxable_trade.amount;
+            let income = taxable_trade.income.amount();
+            let costs = taxable_trade.sum_cash_costs()?;
+            let net_income = taxable_trade.net_income?;
+
+            if current_form.information_groups.len() < 7 {
+                let i = current_form.information_groups.len() + 1;
+                let info_vec = new_information_group(i, currency, amount, income, costs, net_income);
+                current_form.information_groups.push(info_vec);
+            } else {
+                forms.push(current_form);
+
+                current_form = Form {
+                    form: format!("K4-{}P4", year),
+                    identity: Identity { org_num: org_num.clone() },
+                    name: name.clone(),
+                    information_groups: vec![
+                        new_information_group(1, currency, amount, income, costs, net_income)
+                    ],
+                    system_info: None,
+                };
+            }
+        }
+
+        forms.push(current_form);
+
+        Some(forms)
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -46,12 +161,6 @@ struct Identity {
     // den som uppgifterna avser. Anges i formen
     // SSÅÅMMDDNNNK.
     org_num: String,
-
-    // <DatFramst> Datum för framställande av uppgifterna.
-    // Anges i formen SSÅÅMMDD.
-
-    // <TidFramst> Klockslag för framställande av uppgifterna.
-    // Anges i formen TTMMSS.
 }
 
 #[derive(Debug, Serialize)]
@@ -69,87 +178,18 @@ struct Information {
     field_value: String,
 }
 
-impl SruFile {
-    pub(crate) fn try_new(
-        taxable_trades: Vec<&TaxableTrade>,
-        org_num: String,
-        name: Option<String>,
-    ) -> Option<Self> {
-        trades_to_sru_information(taxable_trades)
-            .map(|information| {
-                SruFile {
-                    form: format!("K4-{}P4", chrono::Utc::now().year() - 1),
-                    identity: Identity { org_num },
-                    name,
-                    information,
-                    system_info: None,
-                }
-            })
-    }
+type InformationGroup = Vec<Information>;
 
-    pub(crate) fn write(&self, mut handle: impl Write) -> Result<()> {
-        writeln!(handle, "#BLANKETT {}", self.form)?;
-
-        let now = chrono::Utc::now();
-
-        let identity = &self.identity;
-        writeln!(
-            handle,
-            "#IDENTITET {} {} {}",
-            identity.org_num,
-            now.format("%Y%m%d").to_string(),
-            now.format("%H%M%S").to_string(),
-        )?;
-
-        if let Some(name) = &self.name {
-            writeln!(handle, "#NAMN {}", name)?;
-        }
-
-        for info in &self.information {
-            writeln!(handle, "#UPPGIFT {} {}", info.field_code, info.field_value)?;
-        }
-
-        writeln!(handle, "#BLANKETTSLUT")?;
-        writeln!(handle, "#FIL_SLUT")?;
-
-        Ok(())
-    }
-}
-
-fn trades_to_sru_information(taxable_trades: Vec<&TaxableTrade>) -> Option<Vec<Information>> {
-    let mut result = vec![];
-
-    for (i, taxable_trade) in taxable_trades.into_iter().enumerate() {
-        let currency = taxable_trade.currency.clone();
-        let amount = taxable_trade.amount;
-        let income  = taxable_trade.income.amount();
-        let costs = taxable_trade.sum_cash_costs()?;
-        let net_income = taxable_trade.net_income?;
-
-        let info_vec =
-            sru_information_vec(
-                i+1,
-                currency,
-                amount,
-                income,
-                costs,
-                net_income
-            );
-        result.extend(info_vec);
-    }
-
-    Some(result)
-}
-
-fn sru_information_vec(
+fn new_information_group(
     i: usize,
     currency: Currency,
     amount: Decimal,
     income: Decimal,
     costs: Decimal,
     net_income: Decimal
-) -> Vec<Information> {
+) -> InformationGroup {
     let mut info_vec = vec![];
+
     info_vec.push(Information { field_code: format!("34{}0", i), field_value: amount.abs().round().to_string() });                  // D.1 Antal/Belopp i utländsk valuta
     info_vec.push(Information { field_code: format!("34{}1", i), field_value: currency.to_string() });                              // D.1 Beteckning/Valutakod
     info_vec.push(Information { field_code: format!("34{}2", i), field_value: income.abs().round().to_string() });                  // D.1 Försäljningspris/Återbetalat belopp omräknat till svenska kronor
@@ -167,7 +207,7 @@ fn sru_information_vec(
 mod test {
     use crate::calculator::TaxableTrade;
     use crate::reader::RevolutRow2023;
-    use crate::skatteverket::sru_file::{Identity, SruFile, trades_to_sru_information};
+    use crate::skatteverket::sru_file::SruFile;
     use futures::executor::block_on;
     use std::io::Write;
     use std::path::PathBuf;
@@ -207,13 +247,13 @@ mod test {
             TaxableTrade::taxable_trades(&trades, &"EOS".to_string(), &"SEK".to_string()).await
         })?;
 
-        let sru_file = SruFile {
-            form: "K4-2022P4".to_string(),
-            identity: Identity { org_num: "195001011234".to_string() },
-            name: None,
-            information: trades_to_sru_information(taxable_trades.iter().collect()).ok_or(anyhow!(""))?,
-            system_info: None,
-        };
+        let taxable_trades = TaxableTrade::sum_by_currency(&taxable_trades.iter().collect())?;
+
+        let sru_file = SruFile::try_new(
+            taxable_trades.iter().collect(),
+            "195001011234".to_string(),
+            None
+        ).ok_or(anyhow!(""))?;
 
         let mut buf = vec![];
         sru_file.write(&mut buf)?;
@@ -229,6 +269,7 @@ mod test {
 
         assert!(output.starts_with("#BLANKETT K4-2022P4\n"));
         assert!(output.contains("#IDENTITET 195001011234 "));
+        assert!(output.contains("#UPPGIFT 7014 1"));
         assert!(output.contains("#UPPGIFT 3410 105\n"));
         assert!(output.contains("#UPPGIFT 3411 EOS\n"));
         assert!(output.contains("#UPPGIFT 3412 1485\n"));
