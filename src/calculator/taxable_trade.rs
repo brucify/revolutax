@@ -88,6 +88,7 @@ impl TaxableTrade {
         }
 
         let mut taxable_trades: Vec<TaxableTrade> = vec![];
+
         for (paid_currency, exchanged_currency) in unique_pairs {
             let result =
                 Self::taxable_trades(
@@ -108,24 +109,32 @@ impl TaxableTrade {
     ) -> Result<Vec<TaxableTrade>> {
         let book = CostBook::new(currency.clone(), base_currency.clone());
 
+        let mut err = Ok(());
+
         let (taxable_trades, book) =
             trades.iter()
                 .fold((vec![], book), |(mut acc, mut book), trade| {
                     let currency_match =
                         trade.paid_currency.eq(&book.currency)
                             && trade.exchanged_currency.eq(&book.base_currency);
+
                     if currency_match {
                         match trade.direction {
                             Direction::Buy =>
                                 book.add_buy(trade),
                             Direction::Sell => {
-                                let taxable_trade = book.add_sell(trade).unwrap();
-                                acc.push(taxable_trade);
+                                match book.add_sell(trade) {
+                                    Ok(taxable_trade) => acc.push(taxable_trade),
+                                    Err(e) => err = Err(e),
+                                }
                             }
                         }
                     }
+
                     (acc, book)
                 });
+
+        err?;
 
         debug!("Remaining costs for {:?}:", book.currency);
         book.costs.iter().for_each(|c| debug!("{:?}", c));

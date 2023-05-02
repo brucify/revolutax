@@ -25,16 +25,6 @@ The program reads the transactions of type `EXCHANGE` and `CARD_PAYMENT` and gen
 
     $ cargo run -- account_statement.csv > tax.csv
 
-To generate an SRU file for the Swedish Tax Agency, give the `--sru-file` flag:
-
-    $ cargo run -- \
-        --sru-file \
-        --sru-org-num 195012310123 \
-        --sru-org-name "Svea Specimen" \
-        --year-traded 2023 \
-        --sum \
-        revolut-2023.csv > BLANKETTER.sru
-
 Here is an example input CSV file `account_statement.csv`:
 
 ```csv
@@ -45,7 +35,7 @@ EXCHANGE,Current,2023-01-02 10:00:00,2023-01-02 10:00:00,Exchanged to SEK,-30.00
 CARD_PAYMENT,Current,2023-05-06 10:00:00,2023-05-06 10:00:00,Payment to Amazon,-25.0000,EOS,-500.00,-495.75,4.25,SEK,COMPLETED,45.0000
 ```
 
-The program reads the input CSV file and outputs the following tax report `tax.csv`:
+The program generates a tax report `tax.csv` that looks like this:
 
 ```csv
 Date;Currency;Amount;Income;Cost;Net Income
@@ -60,6 +50,35 @@ This report shows the following information for each transaction:
 * Income (`Försäljningspris`): The income generated from the transaction, calculated in the base currency (SEK).
 * Cost (`Omkostnadsbelopp`): The cost of the transaction, calculated in the base currency (SEK).
 * Net Income (`Vinst/förlust`): The net income generated from the transaction, calculated by subtracting the cost from the income.
+
+#### Current vs. Savings
+
+The program algorithm  takes into account the two types of `Product` of transactions: `Savings` and `Current`.
+Specifically, when calculating the tax for a trade where you sold cryptocurrency, the program will first try to
+find the costs for the sold crypto in the `Current` transactions and deduct them from there. Only when there are
+not enough available costs to deduct on the `Current` transactions will the program deduct from the `Savings`
+transactions.
+
+### Swedish Tax Agency
+
+To generate an SRU file for the Skatteverket, provide the `--sru-file` flag. This will
+produce a file with a .sru extension, containing the same capital gain information as
+the CSV output, and is equivalent to a filled
+[K4-bilagan](https://skatteverket.se/privat/skatter/vardepapper/deklareraaktierochovrigavardepapper/deklareravardepapperexempel.4.7afdf8a313d3421e9a9519.html)
+form. The generated SRU file is formatted according to the [Skatteverket's specifications](https://www.skatteverket.se/download/18.6e8a1495181dad540843eb2/1665748259651/SKV269_28_(2022P4).pdf)
+and includes relevant headers such as `#BLANKETT` and `#UPPGIFT`.
+
+The `--sru-org-num` flag should also be provided, followed by the personal/organization number of
+the taxpayer. This number is included in the `#IDENTITET` header, which is required by 
+the Skatteverket. For example:
+
+    $ cargo run -- \
+        --sru-file \
+        --sru-org-num 195012310123 \
+        --sru-org-name "Svea Specimen" \
+        --year-traded 2023 \
+        --sum \
+        revolut-2023.csv > BLANKETTER.sru
 
 With `--sru-file` flag, the program generates an SRU file `BLANKETTER.sru`:
 
@@ -77,13 +96,9 @@ With `--sru-file` flag, the program generates an SRU file `BLANKETTER.sru`:
 #FIL_SLUT
 ```
 
-#### Current vs. Savings
-
-The program algorithm  takes into account the two types of `Product` of transactions: `Savings` and `Current`.
-Specifically, when calculating the tax for a trade where you sold cryptocurrency, the program will first try to
-find the costs for the sold crypto in the `Current` transactions and deduct them from there. Only when there are
-not enough available costs to deduct on the `Current` transactions will the program deduct from the `Savings`
-transactions.
+The generated SRU file can be submitted to the Skatteverket electronically, simplifying
+the tax reporting process for the taxpayer. If the `--sru-file` flag is not used, the program
+will produce a CSV file containing the same information.
 
 ### Available Options
 
